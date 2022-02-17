@@ -1,8 +1,8 @@
 use rust_code_analysis::{metrics, read_file, FuncSpace, ParserTrait, RustParser};
-use serde_json::{ Value};
+use serde_json::Value;
 use std::collections::*;
 use std::fs;
-use std::path::PathBuf;
+use std::path::*;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -18,6 +18,7 @@ pub enum SifisError {
     #[error("Error while computing Metrics")]
     MetricsError(),
 }
+
 fn read_json(file: String, prefix: &str) -> Result<HashMap<String, Vec<Value>>, SifisError> {
     let val: Value = match serde_json::from_str(file.as_str()) {
         Ok(val) => val,
@@ -42,8 +43,7 @@ fn read_json(file: String, prefix: &str) -> Result<HashMap<String, Vec<Value>>, 
 
 fn get_min_space(root: &FuncSpace, i: usize) -> FuncSpace {
     let mut min_space: FuncSpace = root.clone();
-    let mut stack: Vec<FuncSpace> = Vec::<FuncSpace>::new();
-    stack.push(root.clone());
+    let mut stack: Vec<FuncSpace> = vec![root.clone()];
     while let Some(space) = stack.pop() {
         for s in space.spaces.into_iter() {
             if i >= s.start_line && i <= s.end_line {
@@ -55,10 +55,10 @@ fn get_min_space(root: &FuncSpace, i: usize) -> FuncSpace {
     min_space
 }
 
-fn sifis_plain(path: &PathBuf, covs: &Vec<Value>) -> Result<f64, SifisError> {
+fn sifis_plain(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
     let data = match read_file(path) {
         Ok(data) => data,
-        Err(_err) => return Err(SifisError::WrongFile(path.as_path().display().to_string())),
+        Err(_err) => return Err(SifisError::WrongFile(path.display().to_string())),
     };
     let parser = RustParser::new(data, path, None);
     let space = match metrics(&parser, path) {
@@ -88,10 +88,10 @@ fn sifis_plain(path: &PathBuf, covs: &Vec<Value>) -> Result<f64, SifisError> {
     Ok(sum / ploc)
 }
 
-fn sifis_quantized(path: &PathBuf, covs: &Vec<Value>) -> Result<f64, SifisError> {
+fn sifis_quantized(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
     let data = match read_file(path) {
         Ok(data) => data,
-        Err(_err) => return Err(SifisError::WrongFile(path.as_path().display().to_string())),
+        Err(_err) => return Err(SifisError::WrongFile(path.display().to_string())),
     };
     let parser = RustParser::new(data, path, None);
     let root = match metrics(&parser, path) {
@@ -127,16 +127,16 @@ fn sifis_quantized(path: &PathBuf, covs: &Vec<Value>) -> Result<f64, SifisError>
     Ok(sum / ploc)
 }
 
-pub fn get_sifis(
-    files_path: &PathBuf,
-    json_path: &PathBuf,
+pub fn get_sifis<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
+    files_path: A,
+    json_path: B,
     prefix: &str,
 ) -> Result<(), SifisError> {
     let paths = match fs::read_dir(files_path) {
         Ok(paths) => paths,
         Err(_err) => {
             return Err(SifisError::WrongFile(
-                files_path.as_path().display().to_string(),
+                files_path.as_ref().display().to_string(),
             ))
         }
     };
@@ -144,7 +144,7 @@ pub fn get_sifis(
         Ok(file) => file,
         Err(_err) => {
             return Err(SifisError::WrongFile(
-                json_path.as_path().display().to_string(),
+                json_path.as_ref().display().to_string(),
             ))
         }
     };
