@@ -4,7 +4,7 @@ use std::collections::*;
 use std::fs;
 use std::path::*;
 use thiserror::Error;
-
+/// Customized error messages using thiserror library
 #[derive(Error, Debug)]
 pub enum SifisError {
     #[error("Error while reading File: {0}")]
@@ -19,6 +19,41 @@ pub enum SifisError {
     MetricsError(),
 }
 
+///This function read all  the files in the project folder
+/// Returns all the Rust files, ignoring the other files or an error in case of problems
+fn read_files(files_path : &Path) -> Result<Vec<String>,SifisError> {
+    let mut vec = vec![];
+    let mut first = PathBuf::new();
+    first.push(files_path);
+    let mut stack  = vec![first];
+    while let Some(path) = stack.pop() {
+        if path.is_dir() {
+            let paths = match fs::read_dir(path.clone()) {
+                Ok(paths) => paths,
+                Err(_err) => {
+                    return Err(SifisError::WrongFile(
+                        path.display().to_string(),
+                    ))
+                }
+            };
+    
+            for p in paths {
+                stack.push(p.unwrap().path());
+            }
+        }
+        else {
+            let ext = path.extension();
+
+            if ext != None && ext.unwrap() == "rs" {
+                vec.push(path.display().to_string());
+            }
+        }
+    }
+    Ok(vec)
+   
+}
+/// This fuction read the content of the coveralls  json file obtain by using grcov
+/// Return a HashMap with all the files arrays of covered lines using the path to the file as key
 fn read_json(file: String, prefix: &str) -> Result<HashMap<String, Vec<Value>>, SifisError> {
     let val: Value = match serde_json::from_str(file.as_str()) {
         Ok(val) => val,
@@ -41,6 +76,9 @@ fn read_json(file: String, prefix: &str) -> Result<HashMap<String, Vec<Value>>, 
     Ok(covs)
 }
 
+/// This function find the minimum space for a line i in the file
+/// Tt returns the space
+
 fn get_min_space(root: &FuncSpace, i: usize) -> FuncSpace {
     let mut min_space: FuncSpace = root.clone();
     let mut stack: Vec<FuncSpace> = vec![root.clone()];
@@ -55,6 +93,8 @@ fn get_min_space(root: &FuncSpace, i: usize) -> FuncSpace {
     min_space
 }
 
+/// Calculate the SIFIS plain value  for the given file(only rust language)
+/// Retrurn the value in case of success and an specif error in case of fails
 fn sifis_plain(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
     let data = match read_file(path) {
         Ok(data) => data,
@@ -88,6 +128,8 @@ fn sifis_plain(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
     Ok(sum / ploc)
 }
 
+/// Calculate the SIFIS quantized value  for the given file(only rust language)
+/// Retrurn the value in case of success and an specif error in case of fails
 fn sifis_quantized(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
     let data = match read_file(path) {
         Ok(data) => data,
@@ -127,19 +169,24 @@ fn sifis_quantized(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
     Ok(sum / ploc)
 }
 
+/// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
+/// It prints all the SIFIS values for all the Rust files in the folders
+/// the output will be print as follows:
+/// For "file.rs" the SIFIS plain value is x
+/// For "file.rs" the SIFIS quantized value is x
 pub fn get_sifis<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
-    prefix: &str,
 ) -> Result<(), SifisError> {
-    let paths = match fs::read_dir(files_path) {
-        Ok(paths) => paths,
+    let vec = match read_files(files_path.as_ref()) {
+        Ok(vec) => vec,
         Err(_err) => {
             return Err(SifisError::WrongFile(
                 files_path.as_ref().display().to_string(),
             ))
         }
     };
+   
     let file = match fs::read_to_string(json_path) {
         Ok(file) => file,
         Err(_err) => {
@@ -148,21 +195,20 @@ pub fn get_sifis<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             ))
         }
     };
-    let covs = read_json(file, prefix)?;
-    for path in paths {
-        let p = path.unwrap().path();
-        let key = p.to_str().unwrap().to_string();
-        let arr = match covs.get(&key) {
+    let covs = read_json(file, files_path.as_ref().to_str().unwrap())?;
+    for path in vec {
+        let arr = match covs.get(&path) {
             Some(arr) => arr.to_vec(),
-            None => return Err(SifisError::HashMapError(key)),
+            None => return Err(SifisError::HashMapError(path)),
         };
-        let sifis = sifis_plain(&p, &arr)?;
+        let p = Path::new(&path);
+        let sifis = sifis_plain(p, &arr)?;
         println!(
             "For {:?} the SIFIS plain value is {:.3?}",
             p.file_name().unwrap(),
             sifis
         );
-        let sifis_quantized = sifis_quantized(&p, &arr)?;
+        let sifis_quantized = sifis_quantized(p, &arr)?;
         println!(
             "For {:?} the SIFIS quantized value is {:.3?}",
             p.file_name().unwrap(),
@@ -177,25 +223,29 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-
+    const JSON : &str = "./data/data.json";
+    const PREFIX : &str = "../rust-data-structures-main/";
+    const MAIN : &str = "../rust-data-structures-main/data/main.rs";
+    const SIMPLE : &str = "../rust-data-structures-main/data/simple_main.rs";
+    const FILE : &str =  "./data/simple_main.rs";
     #[test]
     fn test_read_json() {
-        let file = fs::read_to_string("./data/data.json").unwrap();
-        let covs = read_json(file, "../rust-data-structures-main/").unwrap();
+        let file = fs::read_to_string(JSON).unwrap();
+        let covs = read_json(file, PREFIX).unwrap();
         assert_eq!(
-            covs.contains_key("../rust-data-structures-main/data/simple_main.rs"),
+            covs.contains_key(SIMPLE),
             true
         );
         assert_eq!(
-            covs.contains_key("../rust-data-structures-main/data/main.rs"),
+            covs.contains_key(MAIN),
             true
         );
         let vec = covs
-            .get("../rust-data-structures-main/data/simple_main.rs")
+            .get(SIMPLE)
             .unwrap();
         assert_eq!(vec.len(), 12);
         let vec_main = covs
-            .get("../rust-data-structures-main/data/main.rs")
+            .get(MAIN)
             .unwrap();
         assert_eq!(vec_main.len(), 9);
         let value = vec.get(6).unwrap();
@@ -206,12 +256,12 @@ mod tests {
 
     #[test]
     fn test_sifis_plain() {
-        let file = fs::read_to_string("./data/data.json").unwrap();
-        let covs = read_json(file, "../rust-data-structures-main/").unwrap();
+        let file = fs::read_to_string(JSON).unwrap();
+        let covs = read_json(file, PREFIX).unwrap();
         let mut path = PathBuf::new();
-        path.push("./data/simple_main.rs");
+        path.push(FILE);
         let vec = covs
-            .get("../rust-data-structures-main/data/simple_main.rs")
+            .get(SIMPLE)
             .unwrap()
             .to_vec();
         let sifis = sifis_plain(&path, &vec).unwrap();
@@ -220,12 +270,12 @@ mod tests {
 
     #[test]
     fn test_sifis_quantized() {
-        let file = fs::read_to_string("./data/data.json").unwrap();
-        let covs = read_json(file, "../rust-data-structures-main/").unwrap();
+        let file = fs::read_to_string(JSON).unwrap();
+        let covs = read_json(file, PREFIX).unwrap();
         let mut path = PathBuf::new();
-        path.push("./data/simple_main.rs");
+        path.push(FILE);
         let vec = covs
-            .get("../rust-data-structures-main/data/simple_main.rs")
+            .get(SIMPLE)
             .unwrap()
             .to_vec();
         let sifis = sifis_quantized(&path, &vec).unwrap();
