@@ -1,33 +1,24 @@
 mod sifis;
+use std::path::PathBuf;
 use crate::sifis::{get_sifis, SifisError};
-use std::env;
+use clap::Parser;
 
-struct Config {
-    path_file: String,
-    path_json: String,
-}
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// Path to the project folder
+    #[clap(short='p', long="path_file", parse(from_os_str), value_name = "FILE")]
+    path_file: PathBuf,
 
-impl Config {
-    fn new(args: &[String]) -> Config {
-        if args.len() != 3 {
-            println!("Correct format: \n cargo run *project_path* *json_path*");
-            panic!("not enough arguments");
-        }
-        let path_file = args[1].clone();
-        let path_json = args[2].clone();
-
-        Config {
-            path_file,
-            path_json,
-        }
-    }
+    /// path to the grcov json
+    #[clap(short='j', long="path_json", parse(from_os_str), value_name = "FILE")]
+    path_json: PathBuf,
 }
 
 fn main() -> Result<(), SifisError> {
-    let args: Vec<String> = env::args().collect();
-    let config = Config::new(&args);
-    match get_sifis(&config.path_file, &config.path_json) {
+    let args = Args::parse();
+    match get_sifis(&args.path_file, &args.path_json) {
         Ok(()) => Ok(()),
-        Err(err) => Err(err),
+        Err(err) =>  Err(err)
     }
 }
