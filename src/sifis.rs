@@ -1,5 +1,5 @@
 use crate::utility::SifisError;
-use rust_code_analysis::{metrics, read_file, FuncSpace, ParserTrait, RustParser};
+use rust_code_analysis::{get_function_spaces, guess_language, read_file, FuncSpace};
 use serde_json::Value;
 use std::path::*;
 
@@ -27,8 +27,11 @@ pub fn sifis_plain(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
         Ok(data) => data,
         Err(_err) => return Err(SifisError::WrongFile(path.display().to_string())),
     };
-    let parser = RustParser::new(data, path, None);
-    let space = match metrics(&parser, path) {
+    let lang = match guess_language(&data, path).0 {
+        Some(lang) => lang,
+        None => return Err(SifisError::LanguageError()),
+    };
+    let space = match get_function_spaces(&lang, data, path, None) {
         Some(space) => space,
         None => return Err(SifisError::MetricsError()),
     };
@@ -62,8 +65,11 @@ pub fn sifis_quantized(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
         Ok(data) => data,
         Err(_err) => return Err(SifisError::WrongFile(path.display().to_string())),
     };
-    let parser = RustParser::new(data, path, None);
-    let root = match metrics(&parser, path) {
+    let lang = match guess_language(&data, path).0 {
+        Some(lang) => lang,
+        None => return Err(SifisError::LanguageError()),
+    };
+    let root = match get_function_spaces(&lang, data, path, None) {
         Some(root) => root,
         None => return Err(SifisError::MetricsError()),
     };

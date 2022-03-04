@@ -16,6 +16,8 @@ pub enum SifisError {
     ReadingJSONError(),
     #[error("Error while computing Metrics")]
     MetricsError(),
+    #[error("Error while guessing language")]
+    LanguageError(),
 }
 
 ///This function read all  the files in the project folder

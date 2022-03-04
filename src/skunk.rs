@@ -1,5 +1,5 @@
 use crate::utility::{get_coverage_perc, SifisError};
-use rust_code_analysis::{metrics, read_file, ParserTrait, RustParser};
+use rust_code_analysis::{get_function_spaces, guess_language, read_file};
 use serde_json::Value;
 use std::path::*;
 
@@ -14,8 +14,11 @@ pub fn skunk_nosmells(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
         Ok(data) => data,
         Err(_err) => return Err(SifisError::WrongFile(path.display().to_string())),
     };
-    let parser = RustParser::new(data, path, None);
-    let root = match metrics(&parser, path) {
+    let lang = match guess_language(&data, path).0 {
+        Some(lang) => lang,
+        None => return Err(SifisError::LanguageError()),
+    };
+    let root = match get_function_spaces(&lang, data, path, None) {
         Some(root) => root,
         None => return Err(SifisError::MetricsError()),
     };

@@ -1,6 +1,6 @@
 # Weighted Code Coverage
 
-This repository contains implementations for some Weighted Code Coverage algorithms fir the Rust language.
+This repository contains implementations for some Weighted Code Coverage algorithms for  all the languages supported by rust-code-analysis.
 These algorithms are actually implemented:
 - Sifis-Home mechanism by Luca Ardito and others (https://www.sifis-home.eu/wp-content/uploads/2021/10/D2.2_SIFIS-Home_v1.0-to-submit.pdf (section 2.4.1))
 - CRAP by Alberto Savoia and Bob Evans(https://testing.googleblog.com/2011/02/this-code-is-crap.html#:~:text=CRAP%20is%20short%20for%20Change,partner%20in%20crime%20Bob%20Evans. )
