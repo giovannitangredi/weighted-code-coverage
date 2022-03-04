@@ -12,7 +12,7 @@ This repository uses rust code analysis for analyzing the project folder. (https
 
 Run the project with the following command:
 ```
-cargo run -- -p *files_path* -j *json_path* 
+wcc --path_file <FILE> --path_json <FILE>
 ```
 
 files_path : The relative path to the folder with the files to analyze. If it is a folder, add a "/" at the end.
@@ -21,7 +21,7 @@ json_path : The relative path to the json coveralls file obtained from grcov.
 
 Exemple : 
 ```
-cargo run --  -p ../rust-data-structures-main/ -j ./data/coveralls.json
+wcc  --path_file ../rust-data-structures-main/ --path_json ./data/coveralls.json
 ```
 
 

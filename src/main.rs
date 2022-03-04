@@ -1,7 +1,7 @@
-mod sifis;
-use crate::sifis::{get_metrics, SifisError};
 use clap::Parser;
 use std::path::PathBuf;
+use wcc::utility::SifisError;
+use wcc::*;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -15,7 +15,7 @@ struct Args {
     )]
     path_file: PathBuf,
 
-    /// path to the grcov json
+    /// Path to the grcov json in coveralls format
     #[clap(
         short = 'j',
         long = "path_json",
@@ -27,8 +27,5 @@ struct Args {
 
 fn main() -> Result<(), SifisError> {
     let args = Args::parse();
-    match get_metrics(&args.path_file, &args.path_json) {
-        Ok(()) => Ok(()),
-        Err(err) => Err(err),
-    }
+    get_metrics(&args.path_file, &args.path_json)
 }
