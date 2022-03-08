@@ -27,5 +27,5 @@ struct Args {
 
 fn main() -> Result<(), SifisError> {
     let args = Args::parse();
-    get_metrics(&args.path_file, &args.path_json)
+    get_metrics_output(&args.path_file, &args.path_json)
 }
