@@ -24,6 +24,7 @@ pub struct Metrics {
 /// It prints all the SIFIS, CRAP and SkunkScore values for all the Rust files in the folders
 /// the output will be print as follows:
 /// FILE       | SIFIS PLAIN | SIFIS QUANTIZED | CRAP       | SKUNKSCORE
+/// if the a file is not found in the json the output will be shown as NaN
 pub fn get_metrics_output<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
@@ -51,11 +52,17 @@ pub fn get_metrics_output<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         "FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNKSCORE"
     );
     for path in vec {
+        let p = Path::new(&path);
         let arr = match covs.get(&path) {
             Some(arr) => arr.to_vec(),
-            None => return Err(SifisError::HashMapError(path)),
+            None => {
+                println!(
+                    "{0: <20} | {1: <20} | {2: <20} | {3: <20} | {4: <20}",
+                    p.file_name().unwrap().to_str().unwrap(),f64::NAN, f64::NAN, f64::NAN, f64::NAN
+                );
+                continue;  
+            },
         };
-        let p = Path::new(&path);
         let sifis = sifis_plain(p, &arr)?;
         let sifis_quantized = sifis_quantized(p, &arr)?;
         let crap = crap(p, &arr)?;
@@ -95,11 +102,20 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     };
     let covs = read_json(file, files_path.as_ref().to_str().unwrap())?;
     for path in vec {
+        let p = Path::new(&path);
         let arr = match covs.get(&path) {
             Some(arr) => arr.to_vec(),
-            None => return Err(SifisError::HashMapError(path)),
+            None => {
+                res.push(Metrics {
+                    sifis_plain : f64::NAN,
+                    sifis_quantized: f64::NAN,
+                    crap: f64::NAN,
+                    skunk: f64::NAN,
+                    file : p.file_name().unwrap().to_str().unwrap().to_string(),
+                });
+                continue;  
+            },
         };
-        let p = Path::new(&path);
         let file = p.file_name().unwrap().to_str().unwrap().to_string();
         let sifis_plain = sifis_plain(p, &arr)?;
         let sifis_quantized = sifis_quantized(p, &arr)?;
