@@ -3,6 +3,8 @@ use std::collections::*;
 use std::fs;
 use std::path::*;
 use thiserror::Error;
+use crate::Metrics;
+use csv;
 /// Customized error messages using thiserror library
 #[derive(Error, Debug)]
 pub enum SifisError {
@@ -18,6 +20,8 @@ pub enum SifisError {
     MetricsError(),
     #[error("Error while guessing language")]
     LanguageError(),
+    #[error("Error while writing on csv")]
+    WrintingError(),
 }
 
 ///This function read all  the files in the project folder
@@ -95,6 +99,29 @@ pub fn get_coverage_perc(covs: &[Value]) -> Result<f64, SifisError> {
         }
     }
     Ok(covered_lines / tot_lines)
+}
+
+pub(crate) fn export_to_csv(csv_path: &Path, metrics: Vec<Metrics>) -> Result<(),SifisError> {
+    let mut writer = match csv::Writer::from_path(csv_path) {
+        Ok(w) => w,
+        Err(_err) => return Err(SifisError::WrongFile(csv_path.display().to_string())),
+    };
+    match writer.write_record(&["FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNK"]) {
+        Ok(_res) => (),
+        Err(_err) => return Err(SifisError::WrintingError())
+    };
+    for m in metrics {
+        match writer.write_record(&[m.file,format!("{:.3}",m.sifis_plain),format!("{:.3}",m.sifis_quantized),format!("{:.3}",m.crap),format!("{:.3}",m.skunk)]) {
+            Ok(_res) => (),
+            Err(_err) => return Err(SifisError::WrintingError())
+        };
+    }
+    match writer.flush() {
+        Ok(_res) => (),
+        Err(_err) => return Err(SifisError::WrintingError())
+    };
+    Ok(())
+    
 }
 
 #[cfg(test)]

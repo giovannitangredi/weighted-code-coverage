@@ -23,9 +23,20 @@ struct Args {
         value_name = "FILE"
     )]
     path_json: PathBuf,
+    /// Path to the grcov json in coveralls format
+    #[clap(
+        long = "csv",
+        parse(from_os_str),
+        value_name = "CSV"
+    )]
+    path_csv: Option<PathBuf>,
 }
 
 fn main() -> Result<(), SifisError> {
     let args = Args::parse();
+    match &args.path_csv {
+        Some(csv) => print_metrics_to_csv(&args.path_file, &args.path_json,csv)?,
+        None => (),
+    };
     get_metrics_output(&args.path_file, &args.path_json)
 }

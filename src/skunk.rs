@@ -7,7 +7,6 @@ use std::path::*;
 /// https://www.fastruby.io/blog/code-quality/intruducing-skunk-stink-score-calculator.html
 /// In this implementation the code smeels are ignored.
 /// Return the value in case of success and an specif error in case of fails
-
 pub fn skunk_nosmells(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
     let complexity_factor = 25.0;
     let data = match read_file(path) {

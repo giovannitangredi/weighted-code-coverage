@@ -131,3 +131,12 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     }
     Ok(res)
 }
+
+pub fn print_metrics_to_csv<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy, C: AsRef<Path> + Copy>( 
+    files_path: A,
+    json_path: B,
+    csv_path: C
+) -> Result<(),SifisError> {
+    let metrics = get_metrics(files_path,json_path)?;
+    export_to_csv(csv_path.as_ref(),metrics)
+}
