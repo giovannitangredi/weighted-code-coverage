@@ -25,18 +25,10 @@ struct Args {
     )]
     path_json: PathBuf,
     /// Use cognitive metric instead of cyclomatic
-    #[clap(
-        long = "csv",
-        parse(from_os_str),
-        value_name = "CSV"
-    )]
+    #[clap(long = "csv", parse(from_os_str), value_name = "CSV")]
     path_csv: Option<PathBuf>,
-     /// Path to the grcov json in coveralls format
-     #[clap(
-        long = "cognitive",
-        short ='c',
-        parse(from_flag)
-    )]
+    /// Path to the grcov json in coveralls format
+    #[clap(long = "cognitive", short = 'c', parse(from_flag))]
     cognitive: bool,
 }
 
@@ -48,8 +40,8 @@ fn main() -> Result<(), SifisError> {
         COMPLEXITY::CYCLOMATIC
     };
     match &args.path_csv {
-        Some(csv) => print_metrics_to_csv(&args.path_file, &args.path_json,csv,metric_to_use)?,
+        Some(csv) => print_metrics_to_csv(&args.path_file, &args.path_json, csv, metric_to_use)?,
         None => (),
     };
-    get_metrics_output(&args.path_file, &args.path_json,metric_to_use)
+    get_metrics_output(&args.path_file, &args.path_json, metric_to_use)
 }

@@ -28,7 +28,7 @@ pub struct Metrics {
 pub fn get_metrics_output<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
-    metric: COMPLEXITY
+    metric: COMPLEXITY,
 ) -> Result<(), SifisError> {
     let vec = match read_files(files_path.as_ref()) {
         Ok(vec) => vec,
@@ -59,15 +59,20 @@ pub fn get_metrics_output<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             None => {
                 println!(
                     "{0: <20} | {1: <20} | {2: <20} | {3: <20} | {4: <20}",
-                    p.file_name().unwrap().to_str().unwrap(),f64::NAN, f64::NAN, f64::NAN, f64::NAN
+                    p.file_name().unwrap().to_str().unwrap(),
+                    f64::NAN,
+                    f64::NAN,
+                    f64::NAN,
+                    f64::NAN
                 );
-                continue;  
-            },
+                continue;
+            }
         };
-        let sifis = sifis_plain(p, &arr,metric)?;
-        let sifis_quantized = sifis_quantized(p, &arr,metric)?;
-        let crap = crap(p, &arr,metric)?;
-        let skunk = skunk_nosmells(p, &arr,metric)?;
+        let root = get_root(p)?;
+        let sifis = sifis_plain(&root, &arr, metric)?;
+        let sifis_quantized = sifis_quantized(&root, &arr, metric)?;
+        let crap = crap(&root, &arr, metric)?;
+        let skunk = skunk_nosmells(&root, &arr, metric)?;
         println!(
             "{0: <20} | {1: <20.3} | {2: <20.3} | {3: <20.3} | {4: <20.3}",
             p.file_name().unwrap().to_str().unwrap(),
@@ -83,7 +88,7 @@ pub fn get_metrics_output<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
 pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
-    metric: COMPLEXITY
+    metric: COMPLEXITY,
 ) -> Result<Vec<Metrics>, SifisError> {
     let vec = match read_files(files_path.as_ref()) {
         Ok(vec) => vec,
@@ -109,20 +114,21 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             Some(arr) => arr.to_vec(),
             None => {
                 res.push(Metrics {
-                    sifis_plain : f64::NAN,
+                    sifis_plain: f64::NAN,
                     sifis_quantized: f64::NAN,
                     crap: f64::NAN,
                     skunk: f64::NAN,
-                    file : p.file_name().unwrap().to_str().unwrap().to_string(),
+                    file: p.file_name().unwrap().to_str().unwrap().to_string(),
                 });
-                continue;  
-            },
+                continue;
+            }
         };
+        let root = get_root(p)?;
         let file = p.file_name().unwrap().to_str().unwrap().to_string();
-        let sifis_plain = sifis_plain(p, &arr,metric)?;
-        let sifis_quantized = sifis_quantized(p, &arr,metric)?;
-        let crap = crap(p, &arr,metric)?;
-        let skunk = skunk_nosmells(p, &arr,metric)?;
+        let sifis_plain = sifis_plain(&root, &arr, metric)?;
+        let sifis_quantized = sifis_quantized(&root, &arr, metric)?;
+        let crap = crap(&root, &arr, metric)?;
+        let skunk = skunk_nosmells(&root, &arr, metric)?;
         res.push(Metrics {
             sifis_plain,
             sifis_quantized,
@@ -134,12 +140,12 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     Ok(res)
 }
 
-pub fn print_metrics_to_csv<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy, C: AsRef<Path> + Copy>( 
+pub fn print_metrics_to_csv<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy, C: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
     csv_path: C,
-    metric: COMPLEXITY
-) -> Result<(),SifisError> {
-    let metrics = get_metrics(files_path,json_path,metric)?;
-    export_to_csv(csv_path.as_ref(),metrics)
+    metric: COMPLEXITY,
+) -> Result<(), SifisError> {
+    let metrics = get_metrics(files_path, json_path, metric)?;
+    export_to_csv(csv_path.as_ref(), metrics)
 }

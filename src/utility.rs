@@ -1,10 +1,11 @@
+use crate::Metrics;
+use csv;
+use rust_code_analysis::{get_function_spaces, guess_language, read_file, FuncSpace};
 use serde_json::Value;
 use std::collections::*;
 use std::fs;
 use std::path::*;
 use thiserror::Error;
-use crate::Metrics;
-use csv;
 /// Customized error messages using thiserror library
 #[derive(Error, Debug)]
 pub enum SifisError {
@@ -26,9 +27,9 @@ pub enum SifisError {
 
 //enum for complexity metrics
 #[derive(Copy, Debug, Clone)]
-pub enum COMPLEXITY{
+pub enum COMPLEXITY {
     CYCLOMATIC,
-    COGNITIVE
+    COGNITIVE,
 }
 
 ///This function read all  the files in the project folder
@@ -108,27 +109,48 @@ pub fn get_coverage_perc(covs: &[Value]) -> Result<f64, SifisError> {
     Ok(covered_lines / tot_lines)
 }
 
-pub(crate) fn export_to_csv(csv_path: &Path, metrics: Vec<Metrics>) -> Result<(),SifisError> {
+pub(crate) fn export_to_csv(csv_path: &Path, metrics: Vec<Metrics>) -> Result<(), SifisError> {
     let mut writer = match csv::Writer::from_path(csv_path) {
         Ok(w) => w,
         Err(_err) => return Err(SifisError::WrongFile(csv_path.display().to_string())),
     };
     match writer.write_record(&["FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNK"]) {
         Ok(_res) => (),
-        Err(_err) => return Err(SifisError::WrintingError())
+        Err(_err) => return Err(SifisError::WrintingError()),
     };
     for m in metrics {
-        match writer.write_record(&[m.file,format!("{:.3}",m.sifis_plain),format!("{:.3}",m.sifis_quantized),format!("{:.3}",m.crap),format!("{:.3}",m.skunk)]) {
+        match writer.write_record(&[
+            m.file,
+            format!("{:.3}", m.sifis_plain),
+            format!("{:.3}", m.sifis_quantized),
+            format!("{:.3}", m.crap),
+            format!("{:.3}", m.skunk),
+        ]) {
             Ok(_res) => (),
-            Err(_err) => return Err(SifisError::WrintingError())
+            Err(_err) => return Err(SifisError::WrintingError()),
         };
     }
     match writer.flush() {
         Ok(_res) => (),
-        Err(_err) => return Err(SifisError::WrintingError())
+        Err(_err) => return Err(SifisError::WrintingError()),
     };
     Ok(())
-    
+}
+
+pub(crate) fn get_root(path: &Path) -> Result<FuncSpace, SifisError> {
+    let data = match read_file(path) {
+        Ok(data) => data,
+        Err(_err) => return Err(SifisError::WrongFile(path.display().to_string())),
+    };
+    let lang = match guess_language(&data, path).0 {
+        Some(lang) => lang,
+        None => return Err(SifisError::LanguageError()),
+    };
+    let root = match get_function_spaces(&lang, data, path, None) {
+        Some(root) => root,
+        None => return Err(SifisError::MetricsError()),
+    };
+    Ok(root)
 }
 
 #[cfg(test)]
