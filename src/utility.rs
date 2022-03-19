@@ -24,6 +24,13 @@ pub enum SifisError {
     WrintingError(),
 }
 
+//enum for complexity metrics
+#[derive(Copy, Debug, Clone)]
+pub enum COMPLEXITY{
+    CYCLOMATIC,
+    COGNITIVE
+}
+
 ///This function read all  the files in the project folder
 /// Returns all the Rust files, ignoring the other files or an error in case of problems
 pub fn read_files(files_path: &Path) -> Result<Vec<String>, SifisError> {

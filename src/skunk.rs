@@ -1,4 +1,4 @@
-use crate::utility::{get_coverage_perc, SifisError};
+use crate::utility::{get_coverage_perc, SifisError, COMPLEXITY};
 use rust_code_analysis::{get_function_spaces, guess_language, read_file};
 use serde_json::Value;
 use std::path::*;
@@ -7,7 +7,7 @@ use std::path::*;
 /// https://www.fastruby.io/blog/code-quality/intruducing-skunk-stink-score-calculator.html
 /// In this implementation the code smeels are ignored.
 /// Return the value in case of success and an specif error in case of fails
-pub fn skunk_nosmells(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
+pub fn skunk_nosmells(path: &Path, covs: &[Value], metric : COMPLEXITY) -> Result<f64, SifisError> {
     let complexity_factor = 25.0;
     let data = match read_file(path) {
         Ok(data) => data,
@@ -21,7 +21,10 @@ pub fn skunk_nosmells(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
         Some(root) => root,
         None => return Err(SifisError::MetricsError()),
     };
-    let comp = root.metrics.cyclomatic.cyclomatic_sum();
+    let comp = match metric {
+        COMPLEXITY::CYCLOMATIC => root.metrics.cyclomatic.cyclomatic_sum(),
+        COMPLEXITY::COGNITIVE => root.metrics.cognitive.cognitive_sum()
+    };
     let cov = get_coverage_perc(covs)?;
     if cov == 1. {
         Ok(comp / complexity_factor)
@@ -40,6 +43,8 @@ mod tests {
     const PREFIX: &str = "../rust-data-structures-main/";
     const SIMPLE: &str = "../rust-data-structures-main/data/simple_main.rs";
     const FILE: &str = "./data/simple_main.rs";
+    const COMP : COMPLEXITY = COMPLEXITY::CYCLOMATIC;
+    const COGN : COMPLEXITY = COMPLEXITY::COGNITIVE;
 
     #[test]
     fn test_skunk() {
@@ -48,7 +53,9 @@ mod tests {
         let mut path = PathBuf::new();
         path.push(FILE);
         let vec = covs.get(SIMPLE).unwrap().to_vec();
-        let skunk = skunk_nosmells(&path, &vec).unwrap();
-        assert_eq!(skunk, 6.4)
+        let skunk = skunk_nosmells(&path, &vec,COMP).unwrap();
+        assert_eq!(skunk, 6.4);
+        let skunk_cogn = skunk_nosmells(&path, &vec,COGN).unwrap();
+        assert_eq!(skunk_cogn, 4.8);
     }
 }

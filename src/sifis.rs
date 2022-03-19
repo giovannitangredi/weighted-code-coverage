@@ -1,4 +1,5 @@
 use crate::utility::SifisError;
+use crate::utility::COMPLEXITY;
 use rust_code_analysis::{get_function_spaces, guess_language, read_file, FuncSpace};
 use serde_json::Value;
 use std::path::*;
@@ -22,7 +23,7 @@ fn get_min_space(root: &FuncSpace, i: usize) -> FuncSpace {
 
 /// Calculate the SIFIS plain value  for the given file(only rust language)
 /// Return the value in case of success and an specif error in case of fails
-pub fn sifis_plain(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
+pub fn sifis_plain(path: &Path, covs: &[Value],metric : COMPLEXITY) -> Result<f64, SifisError> {
     let data = match read_file(path) {
         Ok(data) => data,
         Err(_err) => return Err(SifisError::WrongFile(path.display().to_string())),
@@ -36,7 +37,10 @@ pub fn sifis_plain(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
         None => return Err(SifisError::MetricsError()),
     };
     let ploc = space.metrics.loc.ploc();
-    let comp = space.metrics.cyclomatic.cyclomatic_sum();
+    let comp = match metric {
+        COMPLEXITY::CYCLOMATIC => space.metrics.cyclomatic.cyclomatic_sum(),
+        COMPLEXITY::COGNITIVE => space.metrics.cognitive.cognitive_sum()
+    };
     let mut sum = 0.0;
 
     for i in 0..covs.len() {
@@ -60,7 +64,7 @@ pub fn sifis_plain(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
 
 /// Calculate the SIFIS quantized value  for the given file(only rust language)
 /// Return the value in case of success and an specif error in case of fails
-pub fn sifis_quantized(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
+pub fn sifis_quantized(path: &Path, covs: &[Value], metric : COMPLEXITY) -> Result<f64, SifisError> {
     let data = match read_file(path) {
         Ok(data) => data,
         Err(_err) => return Err(SifisError::WrongFile(path.display().to_string())),
@@ -76,7 +80,7 @@ pub fn sifis_quantized(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
     let ploc = root.metrics.loc.ploc();
     let mut sum = 0.0;
     let threshold = 10.;
-    //for each line find the minimun space and get complexity value then sum 1 if comp>thresholdelse sum 1
+    //for each line find the minimun space and get complexity value then sum 1 if comp>threshold  else sum 1
     for i in 0..covs.len() {
         let is_null = match covs.get(i) {
             Some(val) => val.is_null(),
@@ -90,7 +94,10 @@ pub fn sifis_quantized(path: &Path, covs: &[Value]) -> Result<f64, SifisError> {
             };
             if cov > 0 {
                 let min_space: FuncSpace = get_min_space(&root, i);
-                let comp = min_space.metrics.cyclomatic.cyclomatic();
+                let comp = match metric {
+                    COMPLEXITY::CYCLOMATIC => min_space.metrics.cyclomatic.cyclomatic(),
+                    COMPLEXITY::COGNITIVE => min_space.metrics.cognitive.cognitive()
+                };
                 if comp > threshold {
                     sum += 2.;
                 } else {
@@ -113,6 +120,8 @@ mod tests {
     const PREFIX: &str = "../rust-data-structures-main/";
     const SIMPLE: &str = "../rust-data-structures-main/data/simple_main.rs";
     const FILE: &str = "./data/simple_main.rs";
+    const COMP : COMPLEXITY = COMPLEXITY::CYCLOMATIC;
+    const COGN : COMPLEXITY = COMPLEXITY::COGNITIVE;
 
     #[test]
     fn test_sifis_plain() {
@@ -121,8 +130,10 @@ mod tests {
         let mut path = PathBuf::new();
         path.push(FILE);
         let vec = covs.get(SIMPLE).unwrap().to_vec();
-        let sifis = sifis_plain(&path, &vec).unwrap();
-        assert_eq!(sifis, 24. / 10.)
+        let sifis = sifis_plain(&path, &vec,COMP).unwrap();
+        assert_eq!(sifis, 24. / 10.);
+        let sifis_cogn = sifis_plain(&path, &vec,COGN).unwrap();
+        assert_eq!(sifis_cogn, 18. / 10.);
     }
 
     #[test]
@@ -132,7 +143,9 @@ mod tests {
         let mut path = PathBuf::new();
         path.push(FILE);
         let vec = covs.get(SIMPLE).unwrap().to_vec();
-        let sifis = sifis_quantized(&path, &vec).unwrap();
-        assert_eq!(sifis, 6. / 10.)
+        let sifis = sifis_quantized(&path, &vec,COMP).unwrap();
+        assert_eq!(sifis, 6. / 10.);
+        let sifis_cogn = sifis_quantized(&path, &vec,COGN).unwrap();
+        assert_eq!(sifis_cogn, 6. / 10.);
     }
 }
