@@ -61,7 +61,7 @@ pub fn sifis_quantized(
 ) -> Result<f64, SifisError> {
     let ploc = root.metrics.loc.ploc();
     let mut sum = 0.0;
-    let threshold = 10.;
+    let threshold = 15.;
     //for each line find the minimun space and get complexity value then sum 1 if comp>threshold  else sum 1
     for i in 0..covs.len() {
         let is_null = match covs.get(i) {
