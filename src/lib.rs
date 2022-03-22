@@ -41,7 +41,7 @@ pub fn get_metrics_output<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             m.file, m.sifis_plain, m.sifis_quantized, m.crap, m.skunk
         );
     }
-    println!("FILES IGNORED: {}",files_ignored);
+    println!("FILES IGNORED: {}", files_ignored);
     Ok(())
 }
 
@@ -92,24 +92,10 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             file,
         });
     }
-    let mut avg = Metrics {
-        sifis_plain: 0.0,
-        sifis_quantized: 0.0,
-        crap: 0.0,
-        skunk: 0.0,
-        file: "AVG".to_string(),
-    };
-    for m in res.clone() {
-        avg.sifis_plain += m.sifis_plain;
-        avg.crap += m.crap;
-        avg.skunk += m.skunk;
-        avg.sifis_quantized += m.sifis_quantized;
-    }
-    avg.sifis_plain /= res.len() as f64;
-    avg.crap /= res.len() as f64;
-    avg.skunk /= res.len() as f64;
-    avg.sifis_quantized /= res.len() as f64;
+    let (avg, min, max) = get_cumulative_values(&res);
     res.push(avg);
+    res.push(min);
+    res.push(max);
     Ok((res, files_ignored))
 }
 

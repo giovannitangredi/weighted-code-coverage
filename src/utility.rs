@@ -153,6 +153,49 @@ pub(crate) fn get_root(path: &Path) -> Result<FuncSpace, SifisError> {
     Ok(root)
 }
 
+pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics, Metrics) {
+    let mut avg = Metrics {
+        sifis_plain: 0.0,
+        sifis_quantized: 0.0,
+        crap: 0.0,
+        skunk: 0.0,
+        file: "AVG".to_string(),
+    };
+    let mut max = Metrics {
+        sifis_plain: 0.0,
+        sifis_quantized: 0.0,
+        crap: 0.0,
+        skunk: 0.0,
+        file: "MAX".to_string(),
+    };
+    let mut min = Metrics {
+        sifis_plain: f64::MAX,
+        sifis_quantized: f64::MAX,
+        crap: f64::MAX,
+        skunk: f64::MAX,
+        file: "MIN".to_string(),
+    };
+    for m in metrics {
+        avg.sifis_plain += m.sifis_plain;
+        avg.crap += m.crap;
+        avg.skunk += m.skunk;
+        avg.sifis_quantized += m.sifis_quantized;
+        min.sifis_plain = min.sifis_plain.min(m.sifis_plain);
+        min.crap = min.crap.min(m.crap);
+        min.sifis_quantized = min.sifis_quantized.min(m.sifis_quantized);
+        min.skunk = min.skunk.min(m.skunk);
+        max.sifis_plain = max.sifis_plain.max(m.sifis_plain);
+        max.crap = max.crap.max(m.crap);
+        max.sifis_quantized = max.sifis_quantized.max(m.sifis_quantized);
+        max.skunk = max.skunk.max(m.skunk);
+    }
+    avg.sifis_plain /= metrics.len() as f64;
+    avg.crap /= metrics.len() as f64;
+    avg.skunk /= metrics.len() as f64;
+    avg.sifis_quantized /= metrics.len() as f64;
+    (avg, min, max)
+}
+
 #[cfg(test)]
 mod tests {
 
