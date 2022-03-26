@@ -3,8 +3,8 @@ use crate::utility::COMPLEXITY;
 use rust_code_analysis::FuncSpace;
 use serde_json::Value;
 
-/// This function find the minimum space for a line i in the file
-/// Tt returns the space
+// This function find the minimum space for a line i in the file
+// Tt returns the space
 fn get_min_space(root: &FuncSpace, i: usize) -> FuncSpace {
     let mut min_space: FuncSpace = root.clone();
     let mut stack: Vec<FuncSpace> = vec![root.clone()];

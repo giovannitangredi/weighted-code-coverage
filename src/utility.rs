@@ -32,9 +32,9 @@ pub enum COMPLEXITY {
     COGNITIVE,
 }
 
-///This function read all  the files in the project folder
-/// Returns all the Rust files, ignoring the other files or an error in case of problems
-pub fn read_files(files_path: &Path) -> Result<Vec<String>, SifisError> {
+// This function read all  the files in the project folder
+// Returns all the Rust files, ignoring the other files or an error in case of problems
+pub(crate) fn read_files(files_path: &Path) -> Result<Vec<String>, SifisError> {
     let mut vec = vec![];
     let mut first = PathBuf::new();
     first.push(files_path);
@@ -60,9 +60,9 @@ pub fn read_files(files_path: &Path) -> Result<Vec<String>, SifisError> {
     Ok(vec)
 }
 
-/// This fuction read the content of the coveralls  json file obtain by using grcov
-/// Return a HashMap with all the files arrays of covered lines using the path to the file as key
-pub fn read_json(file: String, prefix: &str) -> Result<HashMap<String, Vec<Value>>, SifisError> {
+// This fuction read the content of the coveralls  json file obtain by using grcov
+// Return a HashMap with all the files arrays of covered lines using the path to the file as key
+pub(crate) fn read_json(file: String, prefix: &str) -> Result<HashMap<String, Vec<Value>>, SifisError> {
     let val: Value = match serde_json::from_str(file.as_str()) {
         Ok(val) => val,
         Err(_err) => return Err(SifisError::ReadingJSONError()),
@@ -85,7 +85,7 @@ pub fn read_json(file: String, prefix: &str) -> Result<HashMap<String, Vec<Value
 }
 
 // Get the code coverage in percentage
-pub fn get_coverage_perc(covs: &[Value]) -> Result<f64, SifisError> {
+pub(crate) fn get_coverage_perc(covs: &[Value]) -> Result<f64, SifisError> {
     let mut tot_lines = 0.;
     let mut covered_lines = 0.;
     // count the number of covered lines
@@ -137,6 +137,7 @@ pub(crate) fn export_to_csv(csv_path: &Path, metrics: Vec<Metrics>) -> Result<()
     Ok(())
 }
 
+// get the root FuncSpace from a file
 pub(crate) fn get_root(path: &Path) -> Result<FuncSpace, SifisError> {
     let data = match read_file(path) {
         Ok(data) => data,

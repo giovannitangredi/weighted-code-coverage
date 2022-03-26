@@ -21,10 +21,10 @@ pub struct Metrics {
     file: String,
 }
 /// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
-/// It prints all the SIFIS, CRAP and SkunkScore values for all the Rust files in the folders
+/// It prints all the SIFIS, CRAP and SkunkScore values for all the files in the folders
 /// the output will be print as follows:
 /// FILE       | SIFIS PLAIN | SIFIS QUANTIZED | CRAP       | SKUNKSCORE
-/// if the a file is not found in the json the output will be shown as NaN
+/// if the a file is not found in the json that files will be skipped
 pub fn get_metrics_output<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
@@ -45,6 +45,9 @@ pub fn get_metrics_output<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     Ok(())
 }
 
+/// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
+/// if the a file is not found in the json that files will be skipped
+/// It returns a tuple with a vector with all the metrics for a file and the comulative values and the number of files ignored
 pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
@@ -99,6 +102,9 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     Ok((res, files_ignored))
 }
 
+///Prints the reulst of the get_metric function in a csv file
+/// the structure is the following : 
+/// FILE,SIFIS PLAIN,SIFIS QUANTAZED,CRAP,SKUNK
 pub fn print_metrics_to_csv<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy, C: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
