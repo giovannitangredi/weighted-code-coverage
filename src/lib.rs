@@ -9,9 +9,10 @@ use crate::skunk::skunk_nosmells;
 use crate::utility::*;
 use std::fs;
 use std::path::*;
+use serde::{Deserialize, Serialize};
 
 /// Struct with all the metrics computed for a single file
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct Metrics {
     sifis_plain: f64,
@@ -25,12 +26,10 @@ pub struct Metrics {
 /// the output will be print as follows:
 /// FILE       | SIFIS PLAIN | SIFIS QUANTIZED | CRAP       | SKUNKSCORE
 /// if the a file is not found in the json that files will be skipped
-pub fn get_metrics_output<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
-    files_path: A,
-    json_path: B,
-    metric: COMPLEXITY,
+pub fn get_metrics_output(
+    metrics: Vec<Metrics>,
+    files_ignored: Vec<String>,
 ) -> Result<(), SifisError> {
-    let (metrics, files_ignored) = get_metrics(files_path, json_path, metric)?;
     println!(
         "{0: <20} | {1: <20} | {2: <20} | {3: <20} | {4: <20}",
         "FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNKSCORE"
@@ -41,18 +40,18 @@ pub fn get_metrics_output<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             m.file, m.sifis_plain, m.sifis_quantized, m.crap, m.skunk
         );
     }
-    println!("FILES IGNORED: {}", files_ignored);
+    println!("FILES IGNORED: {}", files_ignored.len());
     Ok(())
 }
 
 /// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
 /// if the a file is not found in the json that files will be skipped
-/// It returns a tuple with a vector with all the metrics for a file and the comulative values and the number of files ignored
+/// It returns a tuple with a vector with all the metrics for a file and the comulative values and a vector with the list of all ignored files 
 pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
     metric: COMPLEXITY,
-) -> Result<(Vec<Metrics>, usize), SifisError> {
+) -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
     let vec = match read_files(files_path.as_ref()) {
         Ok(vec) => vec,
         Err(_err) => {
@@ -61,7 +60,7 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             ))
         }
     };
-    let mut files_ignored: usize = 0;
+    let mut files_ignored: Vec<String> = Vec::<String>::new();
     let mut res = Vec::<Metrics>::new();
     let file = match fs::read_to_string(json_path) {
         Ok(file) => file,
@@ -74,15 +73,15 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     let covs = read_json(file, files_path.as_ref().to_str().unwrap())?;
     for path in vec {
         let p = Path::new(&path);
+        let file = p.file_name().unwrap().to_str().unwrap().to_string();
         let arr = match covs.get(&path) {
             Some(arr) => arr.to_vec(),
             None => {
-                files_ignored += 1;
+                files_ignored.push(file);
                 continue;
             }
         };
         let root = get_root(p)?;
-        let file = p.file_name().unwrap().to_str().unwrap().to_string();
         let sifis_plain = sifis_plain(&root, &arr, metric)?;
         let sifis_quantized = sifis_quantized(&root, &arr, metric)?;
         let crap = crap(&root, &arr, metric)?;
@@ -105,12 +104,20 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
 ///Prints the reulst of the get_metric function in a csv file
 /// the structure is the following : 
 /// FILE,SIFIS PLAIN,SIFIS QUANTAZED,CRAP,SKUNK
-pub fn print_metrics_to_csv<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy, C: AsRef<Path> + Copy>(
-    files_path: A,
-    json_path: B,
-    csv_path: C,
-    metric: COMPLEXITY,
+pub fn print_metrics_to_csv<A: AsRef<Path> + Copy>(
+    metrics: Vec<Metrics>,
+    files_ignored: Vec<String>,
+    csv_path: A,
 ) -> Result<(), SifisError> {
-    let (metrics, _files_ignored) = get_metrics(files_path, json_path, metric)?;
-    export_to_csv(csv_path.as_ref(), metrics)
+    export_to_csv(csv_path.as_ref(), metrics,files_ignored)
 }
+
+pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
+    metrics: Vec<Metrics>,
+    files_ignored: Vec<String>,
+    json_output: A,
+    project_folder: A
+) -> Result<(), SifisError> {
+    export_to_json(project_folder.as_ref(),json_output.as_ref(), metrics,files_ignored)
+}
+
