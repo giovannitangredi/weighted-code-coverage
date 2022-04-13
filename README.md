@@ -14,15 +14,28 @@ Run the project with the following command:
 ```
 wcc --path_file <FILE> --path_json <FILE>
 ```
-
-files_path : The relative path to the folder with the files to analyze. If it is a folder, add a "/" at the end.
-
-json_path : The relative path to the json coveralls file obtained from grcov.
+OPTIONS:
+    -c, --cognitive             Use cognitive metric instead of cyclomatic
+        --csv <CSV_OUTPUT>      Path where to save the output of the csv file
+    -h, --help                  Print help information
+    -j, --path_json <FILE>      Path to the grcov json in coveralls format
+        --json <JSON_OUTPUT>    Path where to save the output of the json file
+    -p, --path_file <FILE>      Path to the project folder
+    -V, --version               Print version information
 
 Exemple : 
 ```
-wcc  --path_file ../rust-data-structures-main/ --path_json ./data/coveralls.json
+wcc  --path_file ../rust-data-structures-main/ --path_json ./data/coveralls.json -c --json ./output/file.json
 ```
+
+## Steps for running wcc
+- grcov need the nigthly version of rust in rder to work at its best,rember to switch to this version before using grcov ```rustup default nightly```
+- Install grcov latest version using cargo ``` cargo install grcov ```
+- After grcov has been installed you neet to install llvm-tools component using rustup ```rustup component add llvm-tools-preview ```
+- The RUSTFLAGS and  LLVM_PROFILE_FILE envirioment variables need to be set ``` export RUSTFLAGS="-Cinstrument-coverage" && export LLVM_PROFILE_FILE="your_name-%p-%m.profraw"  ```
+- The go to the folder of the repository you need to analyze and run all the test with ``` cargo test ```
+- After the tests are done some .profraw files will be generated, now just run the following command to print out the json file with all the covarage information ``` grcov . --binary-path ./target/debug/ -t coveralls -s . --token YOUR_COVERALLS_TOKEN > coveralls.json ```
+- The just launch wcc with all your desired options
 
 
 ## License
