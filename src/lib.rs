@@ -7,9 +7,9 @@ use crate::crap::crap;
 use crate::sifis::{sifis_plain, sifis_quantized};
 use crate::skunk::skunk_nosmells;
 use crate::utility::*;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::*;
-use serde::{Deserialize, Serialize};
 
 /// Struct with all the metrics computed for a single file
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
@@ -46,7 +46,7 @@ pub fn get_metrics_output(
 
 /// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
 /// if the a file is not found in the json that files will be skipped
-/// It returns a tuple with a vector with all the metrics for a file and the comulative values and a vector with the list of all ignored files 
+/// It returns a tuple with a vector with all the metrics for a file and the comulative values and a vector with the list of all ignored files
 pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
@@ -102,22 +102,26 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
 }
 
 ///Prints the reulst of the get_metric function in a csv file
-/// the structure is the following : 
+/// the structure is the following :
 /// FILE,SIFIS PLAIN,SIFIS QUANTAZED,CRAP,SKUNK
 pub fn print_metrics_to_csv<A: AsRef<Path> + Copy>(
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
     csv_path: A,
 ) -> Result<(), SifisError> {
-    export_to_csv(csv_path.as_ref(), metrics,files_ignored)
+    export_to_csv(csv_path.as_ref(), metrics, files_ignored)
 }
 
 pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
     json_output: A,
-    project_folder: A
+    project_folder: A,
 ) -> Result<(), SifisError> {
-    export_to_json(project_folder.as_ref(),json_output.as_ref(), metrics,files_ignored)
+    export_to_json(
+        project_folder.as_ref(),
+        json_output.as_ref(),
+        metrics,
+        files_ignored,
+    )
 }
-

@@ -1,12 +1,13 @@
 use crate::Metrics;
 use csv;
 use rust_code_analysis::{get_function_spaces, guess_language, read_file, FuncSpace};
+use serde_json::json;
 use serde_json::Value;
 use std::collections::*;
 use std::fs;
 use std::path::*;
 use thiserror::Error;
-use serde_json::json;
+
 /// Customized error messages using thiserror library
 #[derive(Error, Debug)]
 pub enum SifisError {
@@ -26,7 +27,7 @@ pub enum SifisError {
     WrintingError(),
 }
 
-//enum for complexity metrics
+/// Complexity Metrics
 #[derive(Copy, Debug, Clone)]
 pub enum COMPLEXITY {
     CYCLOMATIC,
@@ -63,7 +64,10 @@ pub(crate) fn read_files(files_path: &Path) -> Result<Vec<String>, SifisError> {
 
 // This fuction read the content of the coveralls  json file obtain by using grcov
 // Return a HashMap with all the files arrays of covered lines using the path to the file as key
-pub(crate) fn read_json(file: String, prefix: &str) -> Result<HashMap<String, Vec<Value>>, SifisError> {
+pub(crate) fn read_json(
+    file: String,
+    prefix: &str,
+) -> Result<HashMap<String, Vec<Value>>, SifisError> {
     let val: Value = match serde_json::from_str(file.as_str()) {
         Ok(val) => val,
         Err(_err) => return Err(SifisError::ReadingJSONError()),
@@ -110,12 +114,23 @@ pub(crate) fn get_coverage_perc(covs: &[Value]) -> Result<f64, SifisError> {
     Ok(covered_lines / tot_lines)
 }
 
-pub(crate) fn export_to_csv(csv_path: &Path, metrics: Vec<Metrics>,files_ignored: Vec<String>) -> Result<(), SifisError> {
+pub(crate) fn export_to_csv(
+    csv_path: &Path,
+    metrics: Vec<Metrics>,
+    files_ignored: Vec<String>,
+) -> Result<(), SifisError> {
     let mut writer = match csv::Writer::from_path(csv_path) {
         Ok(w) => w,
         Err(_err) => return Err(SifisError::WrongFile(csv_path.display().to_string())),
     };
-    match writer.write_record(&["FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNK","IGNORED"]) {
+    match writer.write_record(&[
+        "FILE",
+        "SIFIS PLAIN",
+        "SIFIS QUANTIZED",
+        "CRAP",
+        "SKUNK",
+        "IGNORED",
+    ]) {
         Ok(_res) => (),
         Err(_err) => return Err(SifisError::WrintingError()),
     };
@@ -139,13 +154,13 @@ pub(crate) fn export_to_csv(csv_path: &Path, metrics: Vec<Metrics>,files_ignored
         "----------",
         "----------",
         "----------",
-     ]) {
-         Ok(_res) => (),
-         Err(_err) => return Err(SifisError::WrintingError()),
-     };
+    ]) {
+        Ok(_res) => (),
+        Err(_err) => return Err(SifisError::WrintingError()),
+    };
     for file in files_ignored.clone() {
         match writer.write_record(&[
-           file,
+            file,
             format!("{:.3}", 0.),
             format!("{:.3}", 0.),
             format!("{:.3}", 0.),
@@ -159,14 +174,14 @@ pub(crate) fn export_to_csv(csv_path: &Path, metrics: Vec<Metrics>,files_ignored
     match writer.write_record(&[
         "TOTAL FILES IGNORED".to_string(),
         format!("{:?}", files_ignored.len()),
-       "".to_string(),
-       "".to_string(),
-       "".to_string(),
-       "".to_string(),
-     ]) {
-         Ok(_res) => (),
-         Err(_err) => return Err(SifisError::WrintingError()),
-     };
+        "".to_string(),
+        "".to_string(),
+        "".to_string(),
+        "".to_string(),
+    ]) {
+        Ok(_res) => (),
+        Err(_err) => return Err(SifisError::WrintingError()),
+    };
     match writer.flush() {
         Ok(_res) => (),
         Err(_err) => return Err(SifisError::WrintingError()),
@@ -234,7 +249,12 @@ pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics
     (avg, min, max)
 }
 
-pub(crate) fn export_to_json(project_folder: &Path, output_path: &Path, metrics: Vec<Metrics>,files_ignored: Vec<String>) -> Result<(), SifisError> {
+pub(crate) fn export_to_json(
+    project_folder: &Path,
+    output_path: &Path,
+    metrics: Vec<Metrics>,
+    files_ignored: Vec<String>,
+) -> Result<(), SifisError> {
     let n_files = files_ignored.len();
     let json = json!({
         "project": project_folder.display().to_string(),
@@ -242,14 +262,11 @@ pub(crate) fn export_to_json(project_folder: &Path, output_path: &Path, metrics:
         "metrics":metrics,
         "files_ignored":files_ignored,
     });
-    let json_string = match serde_json::to_string(&json){
+    let json_string = match serde_json::to_string(&json) {
         Ok(data) => data,
-        Err(_err) => return Err(SifisError::WrintingError())
+        Err(_err) => return Err(SifisError::WrintingError()),
     };
-    match fs::write(
-        output_path,
-        json_string,
-    ) {
+    match fs::write(output_path, json_string) {
         Ok(_ok) => (),
         Err(_err) => return Err(SifisError::WrintingError()),
     };
@@ -269,8 +286,8 @@ mod tests {
     fn test_read_json() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        assert_eq!(covs.contains_key(SIMPLE), true);
-        assert_eq!(covs.contains_key(MAIN), true);
+        assert!(covs.contains_key(SIMPLE));
+        assert!(covs.contains_key(MAIN));
         let vec = covs.get(SIMPLE).unwrap();
         assert_eq!(vec.len(), 12);
         let vec_main = covs.get(MAIN).unwrap();
@@ -278,6 +295,6 @@ mod tests {
         let value = vec.get(6).unwrap();
         assert_eq!(value, 2);
         let value_null = vec.get(1).unwrap();
-        assert_eq!(value_null.is_null(), true);
+        assert!(value_null.is_null());
     }
 }
