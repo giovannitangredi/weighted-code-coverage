@@ -7,6 +7,9 @@ on:
 
 jobs:
 
+  env:
+    BINARY: weighted-code-coverage
+
   create-windows-binaries:
 
     runs-on: windows-latest
@@ -37,7 +40,7 @@ jobs:
       shell: bash
       run: |
         ARCHIVE_TARGET="x86_64-pc-windows-msvc"
-        ARCHIVE_NAME="wcc-${{ steps.tagName.outputs.tag }}-$ARCHIVE_TARGET"
+        ARCHIVE_NAME="$BINARY-${{ steps.tagName.outputs.tag }}-$ARCHIVE_TARGET"
         ARCHIVE_FILE="${ARCHIVE_NAME}.zip"
         7z a ${ARCHIVE_FILE} ./target/release/wcc.exe
         echo "::set-output name=file::${ARCHIVE_FILE}"
@@ -79,7 +82,7 @@ jobs:
 
     - name: Strip binary
       run: |
-        strip target/${{ matrix.target }}/release/wcc
+        strip target/${{ matrix.target }}/release/$BINARY
 
     - name: Get the version
       id: tagName
@@ -91,10 +94,10 @@ jobs:
       id: package
       run: |
         ARCHIVE_TARGET=${{ matrix.target }}
-        ARCHIVE_NAME="wcc-${{ steps.tagName.outputs.tag }}-$ARCHIVE_TARGET"
+        ARCHIVE_NAME="$BINARY-${{ steps.tagName.outputs.tag }}-$ARCHIVE_TARGET"
         ARCHIVE_FILE="${ARCHIVE_NAME}.tar.gz"
         mkdir "/tmp/${ARCHIVE_NAME}"
-        cp target/${{ matrix.target }}/release/wcc \
+        cp target/${{ matrix.target }}/release/$BINARY \
            /tmp/${ARCHIVE_NAME}
         tar -czf ${PWD}/${ARCHIVE_FILE} -C /tmp/ ${ARCHIVE_NAME}
         echo ::set-output "name=file::${ARCHIVE_FILE}"
