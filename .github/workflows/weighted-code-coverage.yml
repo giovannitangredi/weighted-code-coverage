@@ -1,4 +1,4 @@
-name: wcc
+name: weighted-code-coverage
 
 on: [push, pull_request]
 
