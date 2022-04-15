@@ -7,10 +7,10 @@ on:
 
 jobs:
 
-  env:
-    BINARY: weighted-code-coverage
-
   create-windows-binaries:
+
+    env:
+      BINARY: weighted-code-coverage
 
     runs-on: windows-latest
 
@@ -53,6 +53,9 @@ jobs:
         path: ${{ steps.package.outputs.file }}
 
   create-unix-binaries:
+
+    env:
+      BINARY: weighted-code-coverage
 
     strategy:
       matrix:
