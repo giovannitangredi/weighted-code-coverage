@@ -42,7 +42,7 @@ jobs:
         ARCHIVE_TARGET="x86_64-pc-windows-msvc"
         ARCHIVE_NAME="$BINARY-${{ steps.tagName.outputs.tag }}-$ARCHIVE_TARGET"
         ARCHIVE_FILE="${ARCHIVE_NAME}.zip"
-        7z a ${ARCHIVE_FILE} ./target/release/wcc.exe
+        7z a ${ARCHIVE_FILE} ./target/release/$BINARY.exe
         echo "::set-output name=file::${ARCHIVE_FILE}"
         echo "::set-output name=name::${ARCHIVE_NAME}.zip"
 
@@ -79,7 +79,7 @@ jobs:
         target: ${{ matrix.target }}
         override: true
 
-    - name: Build wcc
+    - name: Build weighted-code-coverage
       run: |
         cargo build --release --target ${{ matrix.target }}
 
