@@ -1,8 +1,8 @@
 use clap::Parser;
 use std::path::PathBuf;
-use wcc::utility::SifisError;
-use wcc::utility::COMPLEXITY;
-use wcc::*;
+use weighted_code_coverage::utility::SifisError;
+use weighted_code_coverage::utility::COMPLEXITY;
+use weighted_code_coverage::*;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
