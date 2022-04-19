@@ -10,6 +10,7 @@ use crate::utility::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::*;
+use std::thread;
 
 /// Struct with all the metrics computed for a single file
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
@@ -94,6 +95,102 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             file,
         });
     }
+    let (avg, min, max) = get_cumulative_values(&res);
+    res.push(avg);
+    res.push(min);
+    res.push(max);
+    Ok((res, files_ignored))
+}
+
+fn chunck_vector(vec: Vec<String>, n_threads: usize) -> Vec<Vec<String>> {
+    let chuncks = vec.chunks((vec.len() / n_threads).max(1));
+    let mut result = Vec::<Vec<String>>::new();
+    for c in chuncks {
+        let mut v = Vec::<String>::new();
+        for s in c {
+            v.push(s.to_string());
+        }
+        result.push(v)
+    }
+    result
+}
+
+/// Concurrent version of get_metrics
+pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
+    files_path: A,
+    json_path: B,
+    metric: COMPLEXITY,
+) -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
+    let n_threads = 16;
+    let vec = match read_files(files_path.as_ref()) {
+        Ok(vec) => vec,
+        Err(_err) => {
+            return Err(SifisError::WrongFile(
+                files_path.as_ref().display().to_string(),
+            ))
+        }
+    };
+    let file = match fs::read_to_string(json_path) {
+        Ok(file) => file,
+        Err(_err) => {
+            return Err(SifisError::WrongFile(
+                json_path.as_ref().display().to_string(),
+            ))
+        }
+    };
+    let covs = read_json(file, files_path.as_ref().to_str().unwrap())?;
+    let chuncks: Vec<Vec<String>> = chunck_vector(vec, n_threads);
+    let mut handlers = vec![];
+    let mut files_ignored: Vec<String> = Vec::<String>::new();
+    let mut res = Vec::<Metrics>::new();
+    for chunck in chuncks {
+        let t_vec = chunck.clone();
+        let t_covs = covs.clone();
+        let h = thread::spawn(move || -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
+            let mut my_files_ignored: Vec<String> = Vec::<String>::new();
+            let mut my_res = Vec::<Metrics>::new();
+            for path in t_vec {
+                let p = Path::new(&path);
+                let file = p.file_name().unwrap().to_str().unwrap().to_string();
+                let arr = match t_covs.get(&path) {
+                    Some(arr) => arr.to_vec(),
+                    None => {
+                        my_files_ignored.push(file);
+                        continue;
+                    }
+                };
+                let root = get_root(p)?;
+                let sifis_plain = sifis_plain(&root, &arr, metric)?;
+                let sifis_quantized = sifis_quantized(&root, &arr, metric)?;
+                let crap = crap(&root, &arr, metric)?;
+                let skunk = skunk_nosmells(&root, &arr, metric)?;
+                my_res.push(Metrics {
+                    sifis_plain,
+                    sifis_quantized,
+                    crap,
+                    skunk,
+                    file,
+                });
+            }
+
+            Ok((my_res, my_files_ignored))
+        });
+        handlers.push(h);
+    }
+    for handle in handlers {
+        let result = match handle.join().unwrap() {
+            Ok(res) => res,
+            Err(_err) => return Err(SifisError::MetricsError()),
+        };
+        for r in result.0 {
+            res.push(r);
+        }
+        for f in result.1 {
+            files_ignored.push(f);
+        }
+    }
+    files_ignored.sort();
+    res.sort_by(|a, b| a.file.cmp(&b.file));
     let (avg, min, max) = get_cumulative_values(&res);
     res.push(avg);
     res.push(min);

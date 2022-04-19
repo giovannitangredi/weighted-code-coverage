@@ -42,7 +42,8 @@ fn main() -> Result<(), SifisError> {
     } else {
         COMPLEXITY::CYCLOMATIC
     };
-    let (metrics, files_ignored) = get_metrics(&args.path_file, &args.path_json, metric_to_use)?;
+    let (metrics, files_ignored) =
+        get_metrics_concurrent(&args.path_file, &args.path_json, metric_to_use)?;
     match &args.path_csv {
         Some(csv) => print_metrics_to_csv(metrics.clone(), files_ignored.clone(), csv)?,
         None => (),
