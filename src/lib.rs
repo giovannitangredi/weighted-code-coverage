@@ -120,8 +120,8 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
     metric: COMPLEXITY,
+    n_threads: usize
 ) -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
-    let n_threads = 16;
     let vec = match read_files(files_path.as_ref()) {
         Ok(vec) => vec,
         Err(_err) => {
