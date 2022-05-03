@@ -7,7 +7,10 @@ use crate::crap::crap;
 use crate::sifis::{sifis_plain, sifis_quantized};
 use crate::skunk::skunk_nosmells;
 use crate::utility::*;
+use crossbeam::channel::{unbounded, Receiver};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
 use std::path::*;
 use std::thread;
@@ -95,24 +98,55 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             file,
         });
     }
-    let (avg, min, max) = get_cumulative_values(&res);
+    let (avg, n_complex) = get_cumulative_values(&res);
     res.push(avg);
-    res.push(min);
-    res.push(max);
+    res.push(n_complex);
     Ok((res, files_ignored))
 }
 
-fn chunck_vector(vec: Vec<String>, n_threads: usize) -> Vec<Vec<String>> {
-    let chuncks = vec.chunks((vec.len() / n_threads).max(1));
-    let mut result = Vec::<Vec<String>>::new();
-    for c in chuncks {
-        let mut v = Vec::<String>::new();
-        for s in c {
-            v.push(s.to_string());
+struct JobItem {
+    file: String,
+    covs: HashMap<String, Vec<Value>>,
+    metric: COMPLEXITY,
+}
+
+type JobReceiver = Receiver<Option<JobItem>>;
+
+fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
+    let mut files_ignored: Vec<String> = Vec::<String>::new();
+    let mut res = Vec::<Metrics>::new();
+    while let Ok(job) = receiver.recv() {
+        if job.is_none() {
+            break;
         }
-        result.push(v)
+        // Cannot panic because of the check immediately above.
+        let job = job.unwrap();
+        let file = job.file;
+        let covs = job.covs;
+        let metric = job.metric;
+        let path = Path::new(&file);
+        let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+        let arr = match covs.get(&file) {
+            Some(arr) => arr.to_vec(),
+            None => {
+                files_ignored.push(file);
+                continue;
+            }
+        };
+        let root = get_root(path)?;
+        let sifis_plain = sifis_plain(&root, &arr, metric)?;
+        let sifis_quantized = sifis_quantized(&root, &arr, metric)?;
+        let crap = crap(&root, &arr, metric)?;
+        let skunk = skunk_nosmells(&root, &arr, metric)?;
+        res.push(Metrics {
+            sifis_plain,
+            sifis_quantized,
+            crap,
+            skunk,
+            file: file_name,
+        });
     }
-    result
+    Ok((res, files_ignored))
 }
 
 /// Concurrent version of get_metrics
@@ -120,7 +154,7 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
     metric: COMPLEXITY,
-    n_threads: usize
+    n_threads: usize,
 ) -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
     let vec = match read_files(files_path.as_ref()) {
         Ok(vec) => vec,
@@ -139,43 +173,32 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         }
     };
     let covs = read_json(file, files_path.as_ref().to_str().unwrap())?;
-    let chuncks: Vec<Vec<String>> = chunck_vector(vec, n_threads);
     let mut handlers = vec![];
     let mut files_ignored: Vec<String> = Vec::<String>::new();
     let mut res = Vec::<Metrics>::new();
-    for chunck in chuncks {
-        let t_vec = chunck.clone();
-        let t_covs = covs.clone();
+    let (sender, receiver) = unbounded();
+    for _ in 0..n_threads {
+        let r = receiver.clone();
         let h = thread::spawn(move || -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
-            let mut my_files_ignored: Vec<String> = Vec::<String>::new();
-            let mut my_res = Vec::<Metrics>::new();
-            for path in t_vec {
-                let p = Path::new(&path);
-                let file = p.file_name().unwrap().to_str().unwrap().to_string();
-                let arr = match t_covs.get(&path) {
-                    Some(arr) => arr.to_vec(),
-                    None => {
-                        my_files_ignored.push(file);
-                        continue;
-                    }
-                };
-                let root = get_root(p)?;
-                let sifis_plain = sifis_plain(&root, &arr, metric)?;
-                let sifis_quantized = sifis_quantized(&root, &arr, metric)?;
-                let crap = crap(&root, &arr, metric)?;
-                let skunk = skunk_nosmells(&root, &arr, metric)?;
-                my_res.push(Metrics {
-                    sifis_plain,
-                    sifis_quantized,
-                    crap,
-                    skunk,
-                    file,
-                });
-            }
-
-            Ok((my_res, my_files_ignored))
+            consumer(r)
         });
         handlers.push(h);
+    }
+    for file in vec {
+        let job = JobItem {
+            file: file.clone(),
+            covs: covs.clone(),
+            metric,
+        };
+        if let Err(_e) = sender.send(Some(job)) {
+            return Err(SifisError::ConcurrentError());
+        }
+    }
+    // stops all jobs
+    for _ in 0..n_threads {
+        if let Err(_e) = sender.send(None) {
+            return Err(SifisError::ConcurrentError());
+        }
     }
     for handle in handlers {
         let result = match handle.join().unwrap() {
@@ -191,10 +214,9 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     }
     files_ignored.sort();
     res.sort_by(|a, b| a.file.cmp(&b.file));
-    let (avg, min, max) = get_cumulative_values(&res);
+    let (avg, n_complex) = get_cumulative_values(&res);
     res.push(avg);
-    res.push(min);
-    res.push(max);
+    res.push(n_complex);
     Ok((res, files_ignored))
 }
 

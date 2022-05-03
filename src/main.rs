@@ -35,7 +35,7 @@ struct Args {
     cognitive: bool,
 
     /// Number of threads to use for concurrency
-    #[clap(long = "n_threads", short = 'n',default_value_t = 8)]
+    #[clap(long = "n_threads", short = 'n', default_value_t = 8)]
     n_threads: usize,
 }
 
@@ -46,11 +46,15 @@ fn main() -> Result<(), SifisError> {
     } else {
         COMPLEXITY::CYCLOMATIC
     };
-    if args.n_threads <=0 {
+    if args.n_threads == 0 {
         panic!("Number of threads must be greater than 0!")
     }
-    let (metrics, files_ignored) =
-        get_metrics_concurrent(&args.path_file, &args.path_json, metric_to_use,args.n_threads)?;
+    let (metrics, files_ignored) = get_metrics_concurrent(
+        &args.path_file,
+        &args.path_json,
+        metric_to_use,
+        args.n_threads,
+    )?;
     match &args.path_csv {
         Some(csv) => print_metrics_to_csv(metrics.clone(), files_ignored.clone(), csv)?,
         None => (),
