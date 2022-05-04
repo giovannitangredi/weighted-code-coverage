@@ -120,6 +120,7 @@ pub(crate) fn export_to_csv(
     csv_path: &Path,
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
+    complex_files: Vec<Metrics>,
 ) -> Result<(), SifisError> {
     let mut writer = match csv::Writer::from_path(csv_path) {
         Ok(w) => w,
@@ -132,6 +133,8 @@ pub(crate) fn export_to_csv(
         "CRAP",
         "SKUNK",
         "IGNORED",
+        "IS COMPLEX",
+        "FILE PATH",
     ]) {
         Ok(_res) => (),
         Err(_err) => return Err(SifisError::WrintingError()),
@@ -144,13 +147,58 @@ pub(crate) fn export_to_csv(
             format!("{:.3}", m.crap),
             format!("{:.3}", m.skunk),
             format!("{}", false),
+            format!("{}", m.is_complex),
+            m.file_path,
         ]) {
             Ok(_res) => (),
             Err(_err) => return Err(SifisError::WrintingError()),
         };
     }
     match writer.write_record(&[
+        "LIST OF COMPLEX FILES",
+        "----------",
+        "----------",
+        "----------",
+        "----------",
+        "----------",
+        "----------",
+        "----------",
+    ]) {
+        Ok(_res) => (),
+        Err(_err) => return Err(SifisError::WrintingError()),
+    };
+    for m in complex_files.clone() {
+        match writer.write_record(&[
+            m.file,
+            format!("{:.3}", m.sifis_plain),
+            format!("{:.3}", m.sifis_quantized),
+            format!("{:.3}", m.crap),
+            format!("{:.3}", m.skunk),
+            format!("{}", false),
+            format!("{}", m.is_complex),
+            m.file_path,
+        ]) {
+            Ok(_res) => (),
+            Err(_err) => return Err(SifisError::WrintingError()),
+        };
+    }
+    match writer.write_record(&[
+        "TOTAL COMPLEX FILES".to_string(),
+        format!("{:?}", complex_files.len()),
+        "".to_string(),
+        "".to_string(),
+        "".to_string(),
+        "".to_string(),
+        "".to_string(),
+        "".to_string(),
+    ]) {
+        Ok(_res) => (),
+        Err(_err) => return Err(SifisError::WrintingError()),
+    };
+    match writer.write_record(&[
         "LIST OF IGNORED FILES",
+        "----------",
+        "----------",
         "----------",
         "----------",
         "----------",
@@ -168,6 +216,8 @@ pub(crate) fn export_to_csv(
             format!("{:.3}", 0.),
             format!("{:.3}", 0.),
             format!("{}", true),
+            "-".to_string(),
+            "-".to_string(),
         ]) {
             Ok(_res) => (),
             Err(_err) => return Err(SifisError::WrintingError()),
@@ -176,6 +226,8 @@ pub(crate) fn export_to_csv(
     match writer.write_record(&[
         "TOTAL FILES IGNORED".to_string(),
         format!("{:?}", files_ignored.len()),
+        "".to_string(),
+        "".to_string(),
         "".to_string(),
         "".to_string(),
         "".to_string(),
@@ -208,44 +260,64 @@ pub(crate) fn get_root(path: &Path) -> Result<FuncSpace, SifisError> {
     Ok(root)
 }
 
-pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics) {
+pub(crate) fn check_complexity(
+    sifis_plain: f64,
+    sifis_quantized: f64,
+    crap: f64,
+    skunk: f64,
+) -> bool {
+    if sifis_plain > 35. {
+        return true;
+    }
+    if sifis_quantized > 1.5 {
+        return true;
+    }
+    if crap > 35. {
+        return true;
+    }
+    if skunk > 20. {
+        return true;
+    }
+    false
+}
+pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics, Vec<Metrics>) {
     let mut avg = Metrics {
         sifis_plain: 0.0,
         sifis_quantized: 0.0,
         crap: 0.0,
         skunk: 0.0,
         file: "AVG".to_string(),
+        file_path: "-".to_string(),
+        is_complex: false,
     };
-    let mut n_complex = Metrics {
+    let mut max = Metrics {
         sifis_plain: 0.0,
         sifis_quantized: 0.0,
         crap: 0.0,
         skunk: 0.0,
-        file: "COMPLEX_FILES".to_string(),
+        file: "MAX".to_string(),
+        file_path: "-".to_string(),
+        is_complex: false,
     };
+    let mut complex_files = Vec::<Metrics>::new();
     for m in metrics {
         avg.sifis_plain += m.sifis_plain;
         avg.crap += m.crap;
         avg.skunk += m.skunk;
         avg.sifis_quantized += m.sifis_quantized;
-        if m.sifis_plain > 35. || m.sifis_plain < 5. {
-            n_complex.sifis_plain += 1.;
-        }
-        if m.sifis_quantized > 1.5 || m.sifis_quantized < 0.25 {
-            n_complex.sifis_quantized += 1.;
-        }
-        if m.crap > 35. {
-            n_complex.crap += 1.;
-        }
-        if m.skunk > 20. {
-            n_complex.skunk += 1.;
+        max.sifis_plain = max.sifis_plain.max(m.sifis_plain);
+        max.sifis_quantized = max.sifis_quantized.max(m.sifis_quantized);
+        max.crap = max.crap.max(m.crap);
+        max.skunk = max.skunk.max(m.skunk);
+        if m.is_complex {
+            complex_files.push(m.clone());
         }
     }
     avg.sifis_plain /= metrics.len() as f64;
     avg.crap /= metrics.len() as f64;
     avg.skunk /= metrics.len() as f64;
     avg.sifis_quantized /= metrics.len() as f64;
-    (avg, n_complex)
+    (avg, max, complex_files)
 }
 
 pub(crate) fn export_to_json(
@@ -253,13 +325,17 @@ pub(crate) fn export_to_json(
     output_path: &Path,
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
+    complex_files: Vec<Metrics>,
 ) -> Result<(), SifisError> {
     let n_files = files_ignored.len();
+    let number_of_complex_files = complex_files.len();
     let json = json!({
         "project": project_folder.display().to_string(),
-        "numver_of_files_ignored": n_files,
+        "number_of_files_ignored": n_files,
+        "number_of_complex_files": number_of_complex_files,
         "metrics":metrics,
         "files_ignored":files_ignored,
+        "complex_files": complex_files,
     });
     let json_string = match serde_json::to_string(&json) {
         Ok(data) => data,

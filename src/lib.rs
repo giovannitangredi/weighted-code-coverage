@@ -24,7 +24,11 @@ pub struct Metrics {
     crap: f64,
     skunk: f64,
     file: String,
+    file_path: String,
+    is_complex: bool,
 }
+
+type Output = (Vec<Metrics>, Vec<String>, Vec<Metrics>);
 /// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
 /// It prints all the SIFIS, CRAP and SkunkScore values for all the files in the folders
 /// the output will be print as follows:
@@ -33,18 +37,20 @@ pub struct Metrics {
 pub fn get_metrics_output(
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
+    complex_files: Vec<Metrics>,
 ) -> Result<(), SifisError> {
     println!(
-        "{0: <20} | {1: <20} | {2: <20} | {3: <20} | {4: <20}",
-        "FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNKSCORE"
+        "{0: <20} | {1: <20} | {2: <20} | {3: <20} | {4: <20} | {5: <20} | {6: <30}",
+        "FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNKSCORE", "IS_COMPLEX", "FILE PATH"
     );
     for m in metrics {
         println!(
-            "{0: <20} | {1: <20.3} | {2: <20.3} | {3: <20.3} | {4: <20.3}",
-            m.file, m.sifis_plain, m.sifis_quantized, m.crap, m.skunk
+            "{0: <20} | {1: <20.3} | {2: <20.3} | {3: <20.3} | {4: <20.3} | {5: <20} | {6: <30}",
+            m.file, m.sifis_plain, m.sifis_quantized, m.crap, m.skunk, m.is_complex, m.file_path
         );
     }
     println!("FILES IGNORED: {}", files_ignored.len());
+    println!("COMPLEX FILES: {}", complex_files.len());
     Ok(())
 }
 
@@ -55,7 +61,7 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
     json_path: B,
     metric: COMPLEXITY,
-) -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
+) -> Result<Output, SifisError> {
     let vec = match read_files(files_path.as_ref()) {
         Ok(vec) => vec,
         Err(_err) => {
@@ -90,24 +96,31 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         let sifis_quantized = sifis_quantized(&root, &arr, metric)?;
         let crap = crap(&root, &arr, metric)?;
         let skunk = skunk_nosmells(&root, &arr, metric)?;
+        let file_path = path
+            .clone()
+            .split_off(files_path.as_ref().to_str().unwrap().len());
+        let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk);
         res.push(Metrics {
             sifis_plain,
             sifis_quantized,
             crap,
             skunk,
             file,
+            file_path,
+            is_complex,
         });
     }
-    let (avg, n_complex) = get_cumulative_values(&res);
+    let (avg, max, complex_files) = get_cumulative_values(&res);
     res.push(avg);
-    res.push(n_complex);
-    Ok((res, files_ignored))
+    res.push(max);
+    Ok((res, files_ignored, complex_files))
 }
 
 struct JobItem {
     file: String,
     covs: HashMap<String, Vec<Value>>,
     metric: COMPLEXITY,
+    prefix: String,
 }
 
 type JobReceiver = Receiver<Option<JobItem>>;
@@ -124,6 +137,7 @@ fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>), SifisE
         let file = job.file;
         let covs = job.covs;
         let metric = job.metric;
+        let prefix = job.prefix;
         let path = Path::new(&file);
         let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
         let arr = match covs.get(&file) {
@@ -138,12 +152,16 @@ fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>), SifisE
         let sifis_quantized = sifis_quantized(&root, &arr, metric)?;
         let crap = crap(&root, &arr, metric)?;
         let skunk = skunk_nosmells(&root, &arr, metric)?;
+        let file_path = file.clone().split_off(prefix.len());
+        let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk);
         res.push(Metrics {
             sifis_plain,
             sifis_quantized,
             crap,
             skunk,
             file: file_name,
+            file_path,
+            is_complex,
         });
     }
     Ok((res, files_ignored))
@@ -155,7 +173,7 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     json_path: B,
     metric: COMPLEXITY,
     n_threads: usize,
-) -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
+) -> Result<Output, SifisError> {
     let vec = match read_files(files_path.as_ref()) {
         Ok(vec) => vec,
         Err(_err) => {
@@ -189,6 +207,7 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             file: file.clone(),
             covs: covs.clone(),
             metric,
+            prefix: files_path.as_ref().to_str().unwrap().to_string(),
         };
         if let Err(_e) = sender.send(Some(job)) {
             return Err(SifisError::ConcurrentError());
@@ -214,10 +233,10 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     }
     files_ignored.sort();
     res.sort_by(|a, b| a.file.cmp(&b.file));
-    let (avg, n_complex) = get_cumulative_values(&res);
+    let (avg, max, complex_files) = get_cumulative_values(&res);
     res.push(avg);
-    res.push(n_complex);
-    Ok((res, files_ignored))
+    res.push(max);
+    Ok((res, files_ignored, complex_files))
 }
 
 ///Prints the reulst of the get_metric function in a csv file
@@ -226,14 +245,16 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
 pub fn print_metrics_to_csv<A: AsRef<Path> + Copy>(
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
+    complex_files: Vec<Metrics>,
     csv_path: A,
 ) -> Result<(), SifisError> {
-    export_to_csv(csv_path.as_ref(), metrics, files_ignored)
+    export_to_csv(csv_path.as_ref(), metrics, files_ignored, complex_files)
 }
 
 pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
+    complex_files: Vec<Metrics>,
     json_output: A,
     project_folder: A,
 ) -> Result<(), SifisError> {
@@ -242,5 +263,6 @@ pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
         json_output.as_ref(),
         metrics,
         files_ignored,
+        complex_files,
     )
 }
