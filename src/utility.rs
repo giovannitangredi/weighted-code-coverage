@@ -4,6 +4,7 @@ use rust_code_analysis::{get_function_spaces, guess_language, read_file, FuncSpa
 use serde_json::json;
 use serde_json::Value;
 use std::collections::*;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::*;
 use thiserror::Error;
@@ -35,7 +36,18 @@ pub enum COMPLEXITY {
     CYCLOMATIC,
     COGNITIVE,
 }
-
+// check all possible valid extentions
+fn check_ext(ext: &OsStr) -> bool {
+    ext == "rs"
+        || ext == "cpp"
+        || ext == "c"
+        || ext == "js"
+        || ext == "java"
+        || ext == "py"
+        || ext == "tsx"
+        || ext == "ts"
+        || ext == "jsm"
+}
 // This function read all  the files in the project folder
 // Returns all the Rust files, ignoring the other files or an error in case of problems
 pub(crate) fn read_files(files_path: &Path) -> Result<Vec<String>, SifisError> {
@@ -56,7 +68,7 @@ pub(crate) fn read_files(files_path: &Path) -> Result<Vec<String>, SifisError> {
         } else {
             let ext = path.extension();
 
-            if ext != None && ext.unwrap() == "rs" {
+            if ext.is_some() && check_ext(ext.unwrap()) {
                 vec.push(path.display().to_string());
             }
         }
