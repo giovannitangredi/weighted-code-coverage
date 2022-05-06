@@ -94,9 +94,8 @@ pub(crate) fn read_json(
     for x in vec {
         let mut name = prefix.to_string();
         if cfg!(windows) {
-            name += x["name"].as_str().unwrap().replace("/","\\").as_str();
-        }
-        else {
+            name += x["name"].as_str().unwrap().replace('/', "\\").as_str();
+        } else {
             name += x["name"].as_str().unwrap();
         }
         let value = match x["coverage"].as_array() {

@@ -117,10 +117,10 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
 }
 
 struct JobItem {
-    file: String,
+    chunck: Vec<String>,
     covs: HashMap<String, Vec<Value>>,
     metric: COMPLEXITY,
-    prefix: String,
+    prefix: usize,
 }
 
 type JobReceiver = Receiver<Option<JobItem>>;
@@ -134,39 +134,53 @@ fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>), SifisE
         }
         // Cannot panic because of the check immediately above.
         let job = job.unwrap();
-        let file = job.file;
+        let chunck = job.chunck;
         let covs = job.covs;
         let metric = job.metric;
         let prefix = job.prefix;
-        let path = Path::new(&file);
-        let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
-        let arr = match covs.get(&file) {
-            Some(arr) => arr.to_vec(),
-            None => {
-                files_ignored.push(file);
-                continue;
-            }
-        };
-        let root = get_root(path)?;
-        let sifis_plain = sifis_plain(&root, &arr, metric)?;
-        let sifis_quantized = sifis_quantized(&root, &arr, metric)?;
-        let crap = crap(&root, &arr, metric)?;
-        let skunk = skunk_nosmells(&root, &arr, metric)?;
-        let file_path = file.clone().split_off(prefix.len());
-        let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk);
-        res.push(Metrics {
-            sifis_plain,
-            sifis_quantized,
-            crap,
-            skunk,
-            file: file_name,
-            file_path,
-            is_complex,
-        });
+        for file in chunck {
+            let path = Path::new(&file);
+            let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+            let arr = match covs.get(&file) {
+                Some(arr) => arr.to_vec(),
+                None => {
+                    files_ignored.push(file);
+                    continue;
+                }
+            };
+            let root = get_root(path)?;
+            let sifis_plain = sifis_plain(&root, &arr, metric)?;
+            let sifis_quantized = sifis_quantized(&root, &arr, metric)?;
+            let crap = crap(&root, &arr, metric)?;
+            let skunk = skunk_nosmells(&root, &arr, metric)?;
+            let file_path = file.clone().split_off(prefix);
+            let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk);
+            res.push(Metrics {
+                sifis_plain,
+                sifis_quantized,
+                crap,
+                skunk,
+                file: file_name,
+                file_path,
+                is_complex,
+            });
+        }
     }
     Ok((res, files_ignored))
 }
 
+fn chunck_vector(vec: Vec<String>, n_threads: usize) -> Vec<Vec<String>> {
+    let chuncks = vec.chunks((vec.len() / n_threads).max(1));
+    let mut result = Vec::<Vec<String>>::new();
+    for c in chuncks {
+        let mut v = Vec::<String>::new();
+        for s in c {
+            v.push(s.to_string());
+        }
+        result.push(v)
+    }
+    result
+}
 /// Concurrent version of get_metrics
 pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_path: A,
@@ -195,6 +209,7 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     let mut files_ignored: Vec<String> = Vec::<String>::new();
     let mut res = Vec::<Metrics>::new();
     let (sender, receiver) = unbounded();
+    let chuncks = chunck_vector(vec, n_threads);
     for _ in 0..n_threads {
         let r = receiver.clone();
         let h = thread::spawn(move || -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
@@ -202,12 +217,13 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         });
         handlers.push(h);
     }
-    for file in vec {
+    let prefix = files_path.as_ref().to_str().unwrap().to_string().len();
+    for chunck in chuncks {
         let job = JobItem {
-            file: file.clone(),
+            chunck: chunck.clone(),
             covs: covs.clone(),
             metric,
-            prefix: files_path.as_ref().to_str().unwrap().to_string(),
+            prefix,
         };
         if let Err(_e) = sender.send(Some(job)) {
             return Err(SifisError::ConcurrentError());
