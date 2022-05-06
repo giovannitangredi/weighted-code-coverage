@@ -79,7 +79,12 @@ pub(crate) fn read_json(
     let mut covs = HashMap::<String, Vec<Value>>::new();
     for x in vec {
         let mut name = prefix.to_string();
-        name += x["name"].as_str().unwrap();
+        if cfg!(windows) {
+            name += x["name"].as_str().unwrap().replace("/","\\").as_str();
+        }
+        else {
+            name += x["name"].as_str().unwrap();
+        }
         let value = match x["coverage"].as_array() {
             Some(value) => value.to_vec(),
             None => return Err(SifisError::ConversionError()),
