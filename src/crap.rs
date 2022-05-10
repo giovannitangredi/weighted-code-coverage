@@ -5,12 +5,23 @@ use serde_json::Value;
 /// Calculate the CRAP value  for the given file(only rust language)
 /// (https://testing.googleblog.com/2011/02/this-code-is-crap.html#:~:text=CRAP%20is%20short%20for%20Change,partner%20in%20crime%20Bob%20Evans.)
 /// Return the value in case of success and an specif error in case of fails
-pub fn crap(root: &FuncSpace, covs: &[Value], metric: COMPLEXITY) -> Result<f64, SifisError> {
+pub fn crap(root: &FuncSpace, covs: &[Value], metric: COMPLEXITY, coverage : Option<f64>) -> Result<f64, SifisError> {
     let comp = match metric {
         COMPLEXITY::CYCLOMATIC => root.metrics.cyclomatic.cyclomatic_sum(),
         COMPLEXITY::COGNITIVE => root.metrics.cognitive.cognitive_sum(),
     };
-    let cov = get_coverage_perc(covs)?;
+    let cov;
+    if coverage.is_none()
+    { 
+        cov=match get_coverage_perc(covs){
+            Ok(cov)=> cov,
+            Err(err) => return Err(err),
+        };
+    } 
+    else 
+    {
+        cov=coverage.unwrap()/100.0;
+    }
     Ok(((comp.powf(2.)) * ((1.0 - cov).powf(3.))) + comp)
 }
 

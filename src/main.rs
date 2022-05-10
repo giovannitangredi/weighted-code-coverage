@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use weighted_code_coverage::utility::SifisError;
 use weighted_code_coverage::utility::COMPLEXITY;
 use weighted_code_coverage::*;
-
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
@@ -37,6 +36,9 @@ struct Args {
     /// Number of threads to use for concurrency
     #[clap(long = "n_threads", short = 'n', default_value_t = 8)]
     n_threads: usize,
+    /// Path where to save the output of the json file
+    #[clap(long = "json_type", short ='t', value_name = "String",default_value_t = String::from("coveralls"))]
+    json_type: String,
 }
 
 fn main() -> Result<(), SifisError> {
@@ -49,18 +51,33 @@ fn main() -> Result<(), SifisError> {
     if args.n_threads == 0 {
         panic!("Number of threads must be greater than 0!")
     }
-    let (metrics, files_ignored, complex_files) = get_metrics_concurrent(
-        &args.path_file,
-        &args.path_json,
-        metric_to_use,
-        args.n_threads,
-    )?;
+    
+    let (metrics, files_ignored, complex_files,project_coverage) = if args.json_type == "covdir" {
+        get_metrics_concurrent_covdir(
+            &args.path_file,
+            &args.path_json,
+            metric_to_use,
+            args.n_threads,
+        )?
+    } 
+    else if args.json_type == "coveralls" {
+        get_metrics_concurrent(
+            &args.path_file,
+            &args.path_json,
+            metric_to_use,
+            args.n_threads,
+        )?
+    }  
+    else {
+        panic!("Wrong json type! Only covdir or coveralls are supported");
+    };
     match &args.path_csv {
         Some(csv) => print_metrics_to_csv(
             metrics.clone(),
             files_ignored.clone(),
             complex_files.clone(),
             csv,
+            project_coverage,
         )?,
         None => (),
     };
@@ -71,6 +88,7 @@ fn main() -> Result<(), SifisError> {
             complex_files.clone(),
             json,
             &args.path_file,
+            project_coverage,
         )?,
         None => (),
     };

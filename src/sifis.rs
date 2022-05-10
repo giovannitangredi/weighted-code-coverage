@@ -25,6 +25,7 @@ pub fn sifis_plain(
     root: &FuncSpace,
     covs: &[Value],
     metric: COMPLEXITY,
+    is_covdir: bool,
 ) -> Result<f64, SifisError> {
     let ploc = root.metrics.loc.ploc();
     let comp = match metric {
@@ -32,13 +33,21 @@ pub fn sifis_plain(
         COMPLEXITY::COGNITIVE => root.metrics.cognitive.cognitive_sum(),
     };
     let mut sum = 0.0;
-
     for i in 0..covs.len() {
-        let is_null = match covs.get(i) {
-            Some(val) => val.is_null(),
-            None => return Err(SifisError::ConversionError()),
-        };
 
+        let is_null;
+        if is_covdir {
+            is_null = match covs.get(i).unwrap().as_i64() {
+                Some(cov) => cov==-1,
+                None => return Err(SifisError::ConversionError()),
+            };
+        }
+        else {
+            is_null = match covs.get(i) {
+                Some(val) => val.is_null(),
+                None => return Err(SifisError::ConversionError()),
+            };
+        }
         if !is_null {
             let cov = match covs.get(i).unwrap().as_u64() {
                 Some(cov) => cov,
@@ -58,17 +67,26 @@ pub fn sifis_quantized(
     root: &FuncSpace,
     covs: &[Value],
     metric: COMPLEXITY,
+    is_covdir: bool,
 ) -> Result<f64, SifisError> {
     let ploc = root.metrics.loc.ploc();
     let mut sum = 0.0;
     let threshold = 15.;
     //for each line find the minimun space and get complexity value then sum 1 if comp>threshold  else sum 1
     for i in 0..covs.len() {
-        let is_null = match covs.get(i) {
-            Some(val) => val.is_null(),
-            None => return Err(SifisError::ConversionError()),
-        };
-
+        let is_null;
+        if is_covdir {
+            is_null = match covs.get(i).unwrap().as_i64() {
+                Some(cov) => cov==-1,
+                None => return Err(SifisError::ConversionError()),
+            };
+        }
+        else {
+            is_null = match covs.get(i) {
+                Some(val) => val.is_null(),
+                None => return Err(SifisError::ConversionError()),
+            };
+        }
         if !is_null {
             let cov = match covs.get(i).unwrap().as_u64() {
                 Some(cov) => cov,

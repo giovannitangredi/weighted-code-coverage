@@ -2,6 +2,7 @@ use crate::Metrics;
 use csv;
 use rust_code_analysis::{get_function_spaces, guess_language, read_file, FuncSpace};
 use serde_json::json;
+use serde_json::Map;
 use serde_json::Value;
 use std::collections::*;
 use std::ffi::OsStr;
@@ -28,6 +29,8 @@ pub enum SifisError {
     WrintingError(),
     #[error("Error during concurrency")]
     ConcurrentError(),
+    #[error("Json Tpye is not supported!")]
+    TypeError,
 }
 
 /// Complexity Metrics
@@ -106,7 +109,64 @@ pub(crate) fn read_json(
     }
     Ok(covs)
 }
+#[derive(Clone, Default, Debug)]
+#[allow(dead_code)]
+pub(crate) struct Covdir {
+    pub(crate)  name: String,
+    pub(crate)  arr: Vec<Value>,
+    pub(crate)  coverage: f64,
+}
+// This fuction read the content of the coveralls  json file obtain by using grcov
+// Return a HashMap with all the files arrays of covered lines using the path to the file as key
+pub(crate) fn read_json_covdir(
+    file: String,
+    map_prefix: &str,
+) -> Result<HashMap<String, Covdir>, SifisError> {
+    let val: Map<String, Value> = match serde_json::from_str(file.as_str()) {
+        Ok(val) => val,
+        Err(_err) => return Err(SifisError::ReadingJSONError()),
+    };
+    let mut res: HashMap<String, Covdir> = HashMap::<String, Covdir>::new();
+    let mut stack = Vec::<(Map<String, Value>, String)>::new();
+    stack.push((val["children"].as_object().unwrap().clone(), "".to_string()));
+    let covdir = Covdir {
+        name: val["name"].as_str().unwrap().to_string(),
+        arr: vec![],
+        coverage: val["coveragePercent"].as_f64().unwrap(),
+    };
+    res.insert("PROJECT_ROOT".to_string(), covdir);
+    while let Some((val, prefix)) = stack.pop() {
+        for (key, value) in val {
+            if value["children"].is_object() {
+                if prefix == "" {
+                    stack.push((
+                        value["children"].as_object().unwrap().clone(),
+                        prefix.to_owned() + key.as_str(),
+                    ));
+                } else {
+                    stack.push((
+                        value["children"].as_object().unwrap().clone(),
+                        prefix.to_owned() + "/" + key.as_str(),
+                    ));
+                }
+            }
+            let name = value["name"].as_str().unwrap().to_string();
+            let path = Path::new(&name);
+            let ext = path.extension();
 
+            if ext.is_some() && check_ext(ext.unwrap()) {
+                let covdir = Covdir {
+                    name: name,
+                    arr: value["coverage"].as_array().unwrap().to_vec(),
+                    coverage: value["coveragePercent"].as_f64().unwrap(),
+                };
+                let name_path = format!("{}/{}", prefix, key);
+                res.insert(map_prefix.to_owned() + name_path.as_str(), covdir);
+            }
+        }
+    }
+    Ok(res)
+}
 // Get the code coverage in percentage
 pub(crate) fn get_coverage_perc(covs: &[Value]) -> Result<f64, SifisError> {
     let mut tot_lines = 0.;
@@ -132,11 +192,37 @@ pub(crate) fn get_coverage_perc(covs: &[Value]) -> Result<f64, SifisError> {
     Ok(covered_lines / tot_lines)
 }
 
+// Get the code coverage in percentage
+pub(crate) fn get_covered_lines(covs: &[Value]) -> Result<(f64,f64), SifisError> {
+    let mut tot_lines = 0.;
+    let mut covered_lines = 0.;
+    // count the number of covered lines
+    for i in 0..covs.len() {
+        let is_null = match covs.get(i) {
+            Some(val) => val.is_null(),
+            None => return Err(SifisError::ConversionError()),
+        };
+
+        if !is_null {
+            tot_lines += 1.;
+            let cov = match covs.get(i).unwrap().as_u64() {
+                Some(cov) => cov,
+                None => return Err(SifisError::ConversionError()),
+            };
+            if cov > 0 {
+                covered_lines += 1.;
+            }
+        }
+    }
+    Ok((covered_lines , tot_lines))
+}
+
 pub(crate) fn export_to_csv(
     csv_path: &Path,
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
     complex_files: Vec<Metrics>,
+    project_coverage : f64,
 ) -> Result<(), SifisError> {
     let mut writer = match csv::Writer::from_path(csv_path) {
         Ok(w) => w,
@@ -170,6 +256,19 @@ pub(crate) fn export_to_csv(
             Err(_err) => return Err(SifisError::WrintingError()),
         };
     }
+    match writer.write_record(&[
+        "PROJECT_COVERAGE",
+        format!("{:.3}", project_coverage).as_str(),
+        "-",
+        "-",
+        "-",
+        "-",
+        "-",
+        "-",
+    ]) {
+        Ok(_res) => (),
+        Err(_err) => return Err(SifisError::WrintingError()),
+    };
     match writer.write_record(&[
         "LIST OF COMPLEX FILES",
         "----------",
@@ -296,7 +395,7 @@ pub(crate) fn check_complexity(
     }
     false
 }
-pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics, Vec<Metrics>) {
+pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics,Metrics, Vec<Metrics>) {
     let mut avg = Metrics {
         sifis_plain: 0.0,
         sifis_quantized: 0.0,
@@ -305,6 +404,17 @@ pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics
         file: "AVG".to_string(),
         file_path: "-".to_string(),
         is_complex: false,
+        coverage: 0.0
+    };
+    let mut min = Metrics {
+        sifis_plain: 0.0,
+        sifis_quantized: 0.0,
+        crap: 0.0,
+        skunk: 0.0,
+        file: "MIN".to_string(),
+        file_path: "-".to_string(),
+        is_complex: false,
+        coverage: 0.0
     };
     let mut max = Metrics {
         sifis_plain: 0.0,
@@ -314,6 +424,7 @@ pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics
         file: "MAX".to_string(),
         file_path: "-".to_string(),
         is_complex: false,
+        coverage: 0.0
     };
     let mut complex_files = Vec::<Metrics>::new();
     for m in metrics {
@@ -321,10 +432,15 @@ pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics
         avg.crap += m.crap;
         avg.skunk += m.skunk;
         avg.sifis_quantized += m.sifis_quantized;
+        avg.coverage += m.coverage*100.;
         max.sifis_plain = max.sifis_plain.max(m.sifis_plain);
         max.sifis_quantized = max.sifis_quantized.max(m.sifis_quantized);
         max.crap = max.crap.max(m.crap);
         max.skunk = max.skunk.max(m.skunk);
+        min.sifis_plain = min.sifis_plain.min(m.sifis_plain);
+        min.sifis_quantized = min.sifis_quantized.min(m.sifis_quantized);
+        min.crap = min.crap.min(m.crap);
+        min.skunk = min.skunk.min(m.skunk);
         if m.is_complex {
             complex_files.push(m.clone());
         }
@@ -333,7 +449,8 @@ pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics
     avg.crap /= metrics.len() as f64;
     avg.skunk /= metrics.len() as f64;
     avg.sifis_quantized /= metrics.len() as f64;
-    (avg, max, complex_files)
+    avg.coverage /= metrics.len() as f64;
+    (avg, max, min, complex_files)
 }
 
 pub(crate) fn export_to_json(
@@ -342,6 +459,7 @@ pub(crate) fn export_to_json(
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
     complex_files: Vec<Metrics>,
+    project_coverage: f64,
 ) -> Result<(), SifisError> {
     let n_files = files_ignored.len();
     let number_of_complex_files = complex_files.len();
@@ -352,6 +470,7 @@ pub(crate) fn export_to_json(
         "metrics":metrics,
         "files_ignored":files_ignored,
         "complex_files": complex_files,
+        "project_coverage" : project_coverage,
     });
     let json_string = match serde_json::to_string(&json) {
         Ok(data) => data,
