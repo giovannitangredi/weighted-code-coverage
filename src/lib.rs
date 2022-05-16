@@ -15,6 +15,7 @@ use std::fs;
 use std::path::*;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Instant;
 
 /// Struct with all the metrics computed for a single file
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
@@ -127,7 +128,7 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
 }
 
 struct JobItem {
-    chunck: Vec<String>,
+    file: String,
     covs: HashMap<String, Vec<Value>>,
     metric: COMPLEXITY,
     prefix: usize,
@@ -152,46 +153,44 @@ fn consumer(receiver: JobReceiver, cfg: &Config) -> Result<(), SifisError> {
         }
         // Cannot panic because of the check immediately above.
         let job = job.unwrap();
-        let chunck = job.chunck;
+        let file = job.file;
         let covs = job.covs;
         let metric = job.metric;
         let prefix = job.prefix;
-        for file in chunck {
-            let path = Path::new(&file);
-            let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
-            let arr = match covs.get(&file) {
-                Some(arr) => arr.to_vec(),
-                None => {
-                    let mut f = files_ignored.lock().unwrap();
-                    f.push(file);
-                    continue;
-                }
-            };
-            let (covered_lines, tot_lines) = get_covered_lines(&arr)?;
-            let root = get_root(path)?;
-            let sifis_plain = sifis_plain(&root, &arr, metric, false)?;
-            let sifis_quantized = sifis_quantized(&root, &arr, metric, false)?;
-            let crap = crap(&root, &arr, metric, None)?;
-            let skunk = skunk_nosmells(&root, &arr, metric, None)?;
-            let file_path = file.clone().split_off(prefix);
-            let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk);
-            let coverage = get_coverage_perc(&arr)? * 100.;
-            let mut res = res.lock().unwrap();
-            let mut all_cov_lines = all_cov_lines.lock().unwrap();
-            let mut all_tot_lines = all_tot_lines.lock().unwrap();
-            *all_cov_lines += covered_lines;
-            *all_tot_lines += tot_lines;
-            res.push(Metrics {
-                sifis_plain,
-                sifis_quantized,
-                crap,
-                skunk,
-                file: file_name,
-                file_path,
-                is_complex,
-                coverage: f64::round(coverage * 100.0) / 100.0,
-            });
-        }
+        let path = Path::new(&file);
+        let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+        let arr = match covs.get(&file) {
+            Some(arr) => arr.to_vec(),
+            None => {
+                let mut f = files_ignored.lock().unwrap();
+                f.push(file);
+                continue;
+            }
+        };
+        let (covered_lines, tot_lines) = get_covered_lines(&arr)?;
+        let root = get_root(path)?;
+        let sifis_plain = sifis_plain(&root, &arr, metric, false)?;
+        let sifis_quantized = sifis_quantized(&root, &arr, metric, false)?;
+        let crap = crap(&root, &arr, metric, None)?;
+        let skunk = skunk_nosmells(&root, &arr, metric, None)?;
+        let file_path = file.clone().split_off(prefix);
+        let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk);
+        let coverage = get_coverage_perc(&arr)? * 100.;
+        let mut res = res.lock().unwrap();
+        let mut all_cov_lines = all_cov_lines.lock().unwrap();
+        let mut all_tot_lines = all_tot_lines.lock().unwrap();
+        *all_cov_lines += covered_lines;
+        *all_tot_lines += tot_lines;
+        res.push(Metrics {
+            sifis_plain,
+            sifis_quantized,
+            crap,
+            skunk,
+            file: file_name,
+            file_path,
+            is_complex,
+            coverage: f64::round(coverage * 100.0) / 100.0,
+        });
     }
     Ok(())
 }
@@ -243,7 +242,8 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     let covered_lines_arc = Arc::new(Mutex::new(0.));
     let tot_lines_arc = Arc::new(Mutex::new(0.));
     let (sender, receiver) = unbounded();
-    let chuncks = chunck_vector(vec, n_threads);
+    //let chuncks = chunck_vector(vec, n_threads);
+
     for _ in 0..n_threads {
         let r = receiver.clone();
         let config = Config {
@@ -256,9 +256,10 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         handlers.push(h);
     }
     let prefix = files_path.as_ref().to_str().unwrap().to_string().len();
-    for chunck in chuncks {
+    let start =Instant::now();
+    for file in vec {
         let job = JobItem {
-            chunck: chunck.clone(),
+            file: file.clone(),
             covs: covs.clone(),
             metric,
             prefix,
@@ -267,6 +268,8 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             return Err(SifisError::ConcurrentError());
         }
     }
+    let end = Instant::now();
+    println!("Time to send all files : {}",end.duration_since(start).as_millis());
     // stops all jobs
     for _ in 0..n_threads {
         if let Err(_e) = sender.send(None) {

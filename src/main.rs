@@ -90,5 +90,6 @@ fn main() -> Result<(), SifisError> {
         )?,
         None => (),
     };
-    get_metrics_output(metrics, files_ignored, complex_files)
+    //get_metrics_output(metrics, files_ignored, complex_files)
+    Ok(())
 }
