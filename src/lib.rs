@@ -13,6 +13,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::*;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 /// Struct with all the metrics computed for a single file
@@ -132,13 +133,19 @@ struct JobItem {
     prefix: usize,
 }
 
+struct Config {
+    res: Arc<Mutex<Vec<Metrics>>>,
+    files_ignored: Arc<Mutex<Vec<String>>>,
+    covered_lines: Arc<Mutex<f64>>,
+    total_lines: Arc<Mutex<f64>>,
+}
 type JobReceiver = Receiver<Option<JobItem>>;
 
-fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>, f64, f64), SifisError> {
-    let mut files_ignored: Vec<String> = Vec::<String>::new();
-    let mut res = Vec::<Metrics>::new();
-    let mut all_cov_lines = 0.;
-    let mut all_tot_lines = 0.;
+fn consumer(receiver: JobReceiver, cfg: &Config) -> Result<(), SifisError> {
+    let files_ignored = &cfg.files_ignored;
+    let res = &cfg.res;
+    let all_cov_lines = &cfg.covered_lines;
+    let all_tot_lines = &cfg.total_lines;
     while let Ok(job) = receiver.recv() {
         if job.is_none() {
             break;
@@ -155,13 +162,12 @@ fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>, f64, f6
             let arr = match covs.get(&file) {
                 Some(arr) => arr.to_vec(),
                 None => {
-                    files_ignored.push(file);
+                    let mut f = files_ignored.lock().unwrap();
+                    f.push(file);
                     continue;
                 }
             };
             let (covered_lines, tot_lines) = get_covered_lines(&arr)?;
-            all_cov_lines += covered_lines;
-            all_tot_lines += tot_lines;
             let root = get_root(path)?;
             let sifis_plain = sifis_plain(&root, &arr, metric, false)?;
             let sifis_quantized = sifis_quantized(&root, &arr, metric, false)?;
@@ -170,6 +176,11 @@ fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>, f64, f6
             let file_path = file.clone().split_off(prefix);
             let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk);
             let coverage = get_coverage_perc(&arr)? * 100.;
+            let mut res = res.lock().unwrap();
+            let mut all_cov_lines = all_cov_lines.lock().unwrap();
+            let mut all_tot_lines = all_tot_lines.lock().unwrap();
+            *all_cov_lines += covered_lines;
+            *all_tot_lines += tot_lines;
             res.push(Metrics {
                 sifis_plain,
                 sifis_quantized,
@@ -182,7 +193,7 @@ fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>, f64, f6
             });
         }
     }
-    Ok((res, files_ignored, all_cov_lines, all_tot_lines))
+    Ok(())
 }
 
 fn chunck_vector(vec: Vec<String>, n_threads: usize) -> Vec<Vec<String>> {
@@ -223,17 +234,25 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     };
     let covs = read_json(file, files_path.as_ref().to_str().unwrap())?;
     let mut handlers = vec![];
-    let mut files_ignored: Vec<String> = Vec::<String>::new();
+    /*let mut files_ignored: Vec<String> = Vec::<String>::new();
     let mut res = Vec::<Metrics>::new();
     let mut covered_lines = 0.;
-    let mut tot_lines = 0.;
+    let mut tot_lines = 0.;*/
+    let files_ignored_arc = Arc::new(Mutex::new(Vec::<String>::new()));
+    let res_arc = Arc::new(Mutex::new(Vec::<Metrics>::new()));
+    let covered_lines_arc = Arc::new(Mutex::new(0.));
+    let tot_lines_arc = Arc::new(Mutex::new(0.));
     let (sender, receiver) = unbounded();
     let chuncks = chunck_vector(vec, n_threads);
     for _ in 0..n_threads {
         let r = receiver.clone();
-        let h = thread::spawn(
-            move || -> Result<(Vec<Metrics>, Vec<String>, f64, f64), SifisError> { consumer(r) },
-        );
+        let config = Config {
+            res: Arc::clone(&res_arc),
+            files_ignored: Arc::clone(&files_ignored_arc),
+            covered_lines: Arc::clone(&covered_lines_arc),
+            total_lines: Arc::clone(&tot_lines_arc),
+        };
+        let h = thread::spawn(move || -> Result<(), SifisError> { consumer(r, &config) });
         handlers.push(h);
     }
     let prefix = files_path.as_ref().to_str().unwrap().to_string().len();
@@ -255,29 +274,25 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         }
     }
     for handle in handlers {
-        let result = match handle.join().unwrap() {
+        match handle.join().unwrap() {
             Ok(res) => res,
             Err(_err) => return Err(SifisError::ConcurrentError()),
         };
-        for r in result.0 {
-            res.push(r);
-        }
-        for f in result.1 {
-            files_ignored.push(f);
-        }
-        covered_lines += result.2;
-        tot_lines += result.3;
     }
+    let mut files_ignored = files_ignored_arc.lock().unwrap();
+    let mut res = res_arc.lock().unwrap();
+    let covered_lines = covered_lines_arc.lock().unwrap();
+    let tot_lines = tot_lines_arc.lock().unwrap();
     files_ignored.sort();
     res.sort_by(|a, b| a.file.cmp(&b.file));
     let (avg, max, min, complex_files) = get_cumulative_values(&res);
     res.push(avg);
     res.push(max);
     res.push(min);
-    let project_coverage = covered_lines / tot_lines * 100.0;
+    let project_coverage = *covered_lines / *tot_lines * 100.0;
     Ok((
-        res,
-        files_ignored,
+        (*res).clone(),
+        (*files_ignored).clone(),
         complex_files,
         f64::round(project_coverage * 100.) / 100.,
     ))
@@ -289,11 +304,14 @@ struct JobItemCovDir {
     metric: COMPLEXITY,
     prefix: usize,
 }
-
+struct ConfigCovDir {
+    res: Arc<Mutex<Vec<Metrics>>>,
+    files_ignored: Arc<Mutex<Vec<String>>>,
+}
 type JobReceiverCovDir = Receiver<Option<JobItemCovDir>>;
-fn consumer_covdir(receiver: JobReceiverCovDir) -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
-    let mut files_ignored: Vec<String> = Vec::<String>::new();
-    let mut res = Vec::<Metrics>::new();
+fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &ConfigCovDir) -> Result<(), SifisError> {
+    let files_ignored = &cfg.files_ignored;
+    let res = &cfg.res;
     while let Ok(job) = receiver.recv() {
         if job.is_none() {
             break;
@@ -310,7 +328,8 @@ fn consumer_covdir(receiver: JobReceiverCovDir) -> Result<(Vec<Metrics>, Vec<Str
             let covdir = match covs.get(&file) {
                 Some(covdir) => covdir,
                 None => {
-                    files_ignored.push(file);
+                    let mut f = files_ignored.lock().unwrap();
+                    f.push(file);
                     continue;
                 }
             };
@@ -323,6 +342,7 @@ fn consumer_covdir(receiver: JobReceiverCovDir) -> Result<(Vec<Metrics>, Vec<Str
             let skunk = skunk_nosmells(&root, &arr, metric, coverage)?;
             let file_path = file.clone().split_off(prefix);
             let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk);
+            let mut res = res.lock().unwrap();
             res.push(Metrics {
                 sifis_plain,
                 sifis_quantized,
@@ -335,7 +355,7 @@ fn consumer_covdir(receiver: JobReceiverCovDir) -> Result<(Vec<Metrics>, Vec<Str
             });
         }
     }
-    Ok((res, files_ignored))
+    Ok(())
 }
 /// Concurrent version of get_metrics usign covdir format
 pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
@@ -362,15 +382,17 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     };
     let covs = read_json_covdir(file, files_path.as_ref().to_str().unwrap())?;
     let mut handlers = vec![];
-    let mut files_ignored: Vec<String> = Vec::<String>::new();
-    let mut res = Vec::<Metrics>::new();
+    let files_ignored_arc = Arc::new(Mutex::new(Vec::<String>::new()));
+    let res_arc = Arc::new(Mutex::new(Vec::<Metrics>::new()));
     let (sender, receiver) = unbounded();
     let chuncks = chunck_vector(vec, n_threads);
     for _ in 0..n_threads {
         let r = receiver.clone();
-        let h = thread::spawn(move || -> Result<(Vec<Metrics>, Vec<String>), SifisError> {
-            consumer_covdir(r)
-        });
+        let config = ConfigCovDir {
+            res: Arc::clone(&res_arc),
+            files_ignored: Arc::clone(&files_ignored_arc),
+        };
+        let h = thread::spawn(move || -> Result<(), SifisError> { consumer_covdir(r, &config) });
         handlers.push(h);
     }
     let prefix = files_path.as_ref().to_str().unwrap().to_string().len();
@@ -392,17 +414,13 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
         }
     }
     for handle in handlers {
-        let result = match handle.join().unwrap() {
+        match handle.join().unwrap() {
             Ok(res) => res,
             Err(_err) => return Err(SifisError::ConcurrentError()),
         };
-        for r in result.0 {
-            res.push(r);
-        }
-        for f in result.1 {
-            files_ignored.push(f);
-        }
     }
+    let mut files_ignored = files_ignored_arc.lock().unwrap();
+    let mut res = res_arc.lock().unwrap();
     files_ignored.sort();
     res.sort_by(|a, b| a.file.cmp(&b.file));
     let (avg, max, min, complex_files) = get_cumulative_values(&res);
@@ -410,7 +428,12 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     res.push(max);
     res.push(min);
     let project_coverage = covs.get(&("PROJECT_ROOT".to_string())).unwrap().coverage;
-    Ok((res, files_ignored, complex_files, project_coverage))
+    Ok((
+        (*res).clone(),
+        (*files_ignored).clone(),
+        complex_files,
+        project_coverage,
+    ))
 }
 ///Prints the reulst of the get_metric function in a csv file
 /// the structure is the following :
