@@ -10,25 +10,21 @@ pub fn skunk_nosmells(
     root: &FuncSpace,
     covs: &[Value],
     metric: COMPLEXITY,
-    coverage: Option<f64>
+    coverage: Option<f64>,
 ) -> Result<f64, SifisError> {
     let complexity_factor = 25.0;
     let comp = match metric {
         COMPLEXITY::CYCLOMATIC => root.metrics.cyclomatic.cyclomatic_sum(),
         COMPLEXITY::COGNITIVE => root.metrics.cognitive.cognitive_sum(),
     };
-    let cov;
-    if coverage.is_none()
-    { 
-        cov=match get_coverage_perc(covs){
-            Ok(cov)=> cov,
+    let cov = if let Some(coverage) = coverage {
+        coverage / 100.0
+    } else {
+        match get_coverage_perc(covs) {
+            Ok(cov) => cov,
             Err(err) => return Err(err),
-        };
-    } 
-    else 
-    {
-        cov=coverage.unwrap()/100.0;
-    }
+        }
+    };
     if cov == 1. {
         Ok(comp / complexity_factor)
     } else {

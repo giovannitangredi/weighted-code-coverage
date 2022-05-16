@@ -112,9 +112,9 @@ pub(crate) fn read_json(
 #[derive(Clone, Default, Debug)]
 #[allow(dead_code)]
 pub(crate) struct Covdir {
-    pub(crate)  name: String,
-    pub(crate)  arr: Vec<Value>,
-    pub(crate)  coverage: f64,
+    pub(crate) name: String,
+    pub(crate) arr: Vec<Value>,
+    pub(crate) coverage: f64,
 }
 // This fuction read the content of the coveralls  json file obtain by using grcov
 // Return a HashMap with all the files arrays of covered lines using the path to the file as key
@@ -127,8 +127,7 @@ pub(crate) fn read_json_covdir(
         Err(_err) => return Err(SifisError::ReadingJSONError()),
     };
     let mut res: HashMap<String, Covdir> = HashMap::<String, Covdir>::new();
-    let mut stack = Vec::<(Map<String, Value>, String)>::new();
-    stack.push((val["children"].as_object().unwrap().clone(), "".to_string()));
+    let mut stack = vec![(val["children"].as_object().unwrap().clone(), "".to_string())];
     let covdir = Covdir {
         name: val["name"].as_str().unwrap().to_string(),
         arr: vec![],
@@ -138,7 +137,7 @@ pub(crate) fn read_json_covdir(
     while let Some((val, prefix)) = stack.pop() {
         for (key, value) in val {
             if value["children"].is_object() {
-                if prefix == "" {
+                if prefix.is_empty() {
                     stack.push((
                         value["children"].as_object().unwrap().clone(),
                         prefix.to_owned() + key.as_str(),
@@ -156,7 +155,7 @@ pub(crate) fn read_json_covdir(
 
             if ext.is_some() && check_ext(ext.unwrap()) {
                 let covdir = Covdir {
-                    name: name,
+                    name,
                     arr: value["coverage"].as_array().unwrap().to_vec(),
                     coverage: value["coveragePercent"].as_f64().unwrap(),
                 };
@@ -193,7 +192,7 @@ pub(crate) fn get_coverage_perc(covs: &[Value]) -> Result<f64, SifisError> {
 }
 
 // Get the code coverage in percentage
-pub(crate) fn get_covered_lines(covs: &[Value]) -> Result<(f64,f64), SifisError> {
+pub(crate) fn get_covered_lines(covs: &[Value]) -> Result<(f64, f64), SifisError> {
     let mut tot_lines = 0.;
     let mut covered_lines = 0.;
     // count the number of covered lines
@@ -214,7 +213,7 @@ pub(crate) fn get_covered_lines(covs: &[Value]) -> Result<(f64,f64), SifisError>
             }
         }
     }
-    Ok((covered_lines , tot_lines))
+    Ok((covered_lines, tot_lines))
 }
 
 pub(crate) fn export_to_csv(
@@ -222,7 +221,7 @@ pub(crate) fn export_to_csv(
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
     complex_files: Vec<Metrics>,
-    project_coverage : f64,
+    project_coverage: f64,
 ) -> Result<(), SifisError> {
     let mut writer = match csv::Writer::from_path(csv_path) {
         Ok(w) => w,
@@ -395,7 +394,9 @@ pub(crate) fn check_complexity(
     }
     false
 }
-pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics,Metrics, Vec<Metrics>) {
+pub(crate) fn get_cumulative_values(
+    metrics: &Vec<Metrics>,
+) -> (Metrics, Metrics, Metrics, Vec<Metrics>) {
     let mut avg = Metrics {
         sifis_plain: 0.0,
         sifis_quantized: 0.0,
@@ -404,7 +405,7 @@ pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics
         file: "AVG".to_string(),
         file_path: "-".to_string(),
         is_complex: false,
-        coverage: 0.0
+        coverage: 0.0,
     };
     let mut min = Metrics {
         sifis_plain: 0.0,
@@ -414,7 +415,7 @@ pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics
         file: "MIN".to_string(),
         file_path: "-".to_string(),
         is_complex: false,
-        coverage: 0.0
+        coverage: 0.0,
     };
     let mut max = Metrics {
         sifis_plain: 0.0,
@@ -424,7 +425,7 @@ pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics
         file: "MAX".to_string(),
         file_path: "-".to_string(),
         is_complex: false,
-        coverage: 0.0
+        coverage: 0.0,
     };
     let mut complex_files = Vec::<Metrics>::new();
     for m in metrics {
@@ -432,7 +433,7 @@ pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics
         avg.crap += m.crap;
         avg.skunk += m.skunk;
         avg.sifis_quantized += m.sifis_quantized;
-        avg.coverage += m.coverage*100.;
+        avg.coverage += m.coverage * 100.;
         max.sifis_plain = max.sifis_plain.max(m.sifis_plain);
         max.sifis_quantized = max.sifis_quantized.max(m.sifis_quantized);
         max.crap = max.crap.max(m.crap);

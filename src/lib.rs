@@ -29,7 +29,7 @@ pub struct Metrics {
     coverage: f64,
 }
 
-type Output = (Vec<Metrics>, Vec<String>, Vec<Metrics>,f64);
+type Output = (Vec<Metrics>, Vec<String>, Vec<Metrics>, f64);
 /// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
 /// It prints all the SIFIS, CRAP and SkunkScore values for all the files in the folders
 /// the output will be print as follows:
@@ -71,8 +71,8 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             ))
         }
     };
-    let mut covered_lines=0.;
-    let mut tot_lines=0.;
+    let mut covered_lines = 0.;
+    let mut tot_lines = 0.;
     let mut files_ignored: Vec<String> = Vec::<String>::new();
     let mut res = Vec::<Metrics>::new();
     let file = match fs::read_to_string(json_path) {
@@ -95,13 +95,13 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             }
         };
         let (_covered_lines, _tot_lines) = get_covered_lines(&arr)?;
-        covered_lines +=_covered_lines;
+        covered_lines += _covered_lines;
         tot_lines += _tot_lines;
         let root = get_root(p)?;
-        let sifis_plain = sifis_plain(&root, &arr, metric,false)?;
-        let sifis_quantized = sifis_quantized(&root, &arr, metric,false)?;
-        let crap = crap(&root, &arr, metric,None)?;
-        let skunk = skunk_nosmells(&root, &arr, metric,None)?;
+        let sifis_plain = sifis_plain(&root, &arr, metric, false)?;
+        let sifis_quantized = sifis_quantized(&root, &arr, metric, false)?;
+        let crap = crap(&root, &arr, metric, None)?;
+        let skunk = skunk_nosmells(&root, &arr, metric, None)?;
         let file_path = path
             .clone()
             .split_off(files_path.as_ref().to_str().unwrap().len());
@@ -118,11 +118,11 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         });
     }
     let (avg, max, min, complex_files) = get_cumulative_values(&res);
-    res.push(avg.clone());
+    res.push(avg);
     res.push(max);
     res.push(min);
-    let project_coverage = covered_lines/tot_lines;
-    Ok((res, files_ignored, complex_files,project_coverage))
+    let project_coverage = covered_lines / tot_lines;
+    Ok((res, files_ignored, complex_files, project_coverage))
 }
 
 struct JobItem {
@@ -134,11 +134,11 @@ struct JobItem {
 
 type JobReceiver = Receiver<Option<JobItem>>;
 
-fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>,f64,f64), SifisError> {
+fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>, f64, f64), SifisError> {
     let mut files_ignored: Vec<String> = Vec::<String>::new();
     let mut res = Vec::<Metrics>::new();
-    let mut all_cov_lines=0.;
-    let mut all_tot_lines=0.;
+    let mut all_cov_lines = 0.;
+    let mut all_tot_lines = 0.;
     while let Ok(job) = receiver.recv() {
         if job.is_none() {
             break;
@@ -159,17 +159,17 @@ fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>,f64,f64)
                     continue;
                 }
             };
-            let (covered_lines,tot_lines) = get_covered_lines(&arr)?;
+            let (covered_lines, tot_lines) = get_covered_lines(&arr)?;
             all_cov_lines += covered_lines;
             all_tot_lines += tot_lines;
             let root = get_root(path)?;
-            let sifis_plain = sifis_plain(&root, &arr, metric,false)?;
-            let sifis_quantized = sifis_quantized(&root, &arr, metric,false)?;
-            let crap = crap(&root, &arr, metric,None)?;
-            let skunk = skunk_nosmells(&root, &arr, metric,None)?;
+            let sifis_plain = sifis_plain(&root, &arr, metric, false)?;
+            let sifis_quantized = sifis_quantized(&root, &arr, metric, false)?;
+            let crap = crap(&root, &arr, metric, None)?;
+            let skunk = skunk_nosmells(&root, &arr, metric, None)?;
             let file_path = file.clone().split_off(prefix);
             let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk);
-            let coverage = get_coverage_perc(&arr)?*100.;
+            let coverage = get_coverage_perc(&arr)? * 100.;
             res.push(Metrics {
                 sifis_plain,
                 sifis_quantized,
@@ -178,11 +178,11 @@ fn consumer(receiver: JobReceiver) -> Result<(Vec<Metrics>, Vec<String>,f64,f64)
                 file: file_name,
                 file_path,
                 is_complex,
-                coverage: f64::round(coverage*100.0)/100.0,
+                coverage: f64::round(coverage * 100.0) / 100.0,
             });
         }
     }
-    Ok((res, files_ignored,all_cov_lines, all_tot_lines))
+    Ok((res, files_ignored, all_cov_lines, all_tot_lines))
 }
 
 fn chunck_vector(vec: Vec<String>, n_threads: usize) -> Vec<Vec<String>> {
@@ -225,13 +225,15 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     let mut handlers = vec![];
     let mut files_ignored: Vec<String> = Vec::<String>::new();
     let mut res = Vec::<Metrics>::new();
+    let mut covered_lines = 0.;
+    let mut tot_lines = 0.;
     let (sender, receiver) = unbounded();
     let chuncks = chunck_vector(vec, n_threads);
     for _ in 0..n_threads {
         let r = receiver.clone();
-        let h = thread::spawn(move || -> Result<(Vec<Metrics>, Vec<String>,f64,f64), SifisError> {
-            consumer(r)
-        });
+        let h = thread::spawn(
+            move || -> Result<(Vec<Metrics>, Vec<String>, f64, f64), SifisError> { consumer(r) },
+        );
         handlers.push(h);
     }
     let prefix = files_path.as_ref().to_str().unwrap().to_string().len();
@@ -252,8 +254,6 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             return Err(SifisError::ConcurrentError());
         }
     }
-    let mut covered_lines=0.;
-    let mut tot_lines=0.;
     for handle in handlers {
         let result = match handle.join().unwrap() {
             Ok(res) => res,
@@ -271,11 +271,16 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     files_ignored.sort();
     res.sort_by(|a, b| a.file.cmp(&b.file));
     let (avg, max, min, complex_files) = get_cumulative_values(&res);
-    res.push(avg.clone());
+    res.push(avg);
     res.push(max);
     res.push(min);
-    let project_coverage = covered_lines/tot_lines*100.0;
-    Ok((res, files_ignored, complex_files,f64::round(project_coverage*100.)/100.))
+    let project_coverage = covered_lines / tot_lines * 100.0;
+    Ok((
+        res,
+        files_ignored,
+        complex_files,
+        f64::round(project_coverage * 100.) / 100.,
+    ))
 }
 
 struct JobItemCovDir {
@@ -312,10 +317,10 @@ fn consumer_covdir(receiver: JobReceiverCovDir) -> Result<(Vec<Metrics>, Vec<Str
             let arr = covdir.arr.clone();
             let coverage = Some(covdir.coverage);
             let root = get_root(path)?;
-            let sifis_plain = sifis_plain(&root, &arr, metric,true)?;
-            let sifis_quantized = sifis_quantized(&root, &arr, metric,true)?;
-            let crap = crap(&root, &arr, metric,coverage)?;
-            let skunk = skunk_nosmells(&root, &arr, metric,coverage)?;
+            let sifis_plain = sifis_plain(&root, &arr, metric, true)?;
+            let sifis_quantized = sifis_quantized(&root, &arr, metric, true)?;
+            let crap = crap(&root, &arr, metric, coverage)?;
+            let skunk = skunk_nosmells(&root, &arr, metric, coverage)?;
             let file_path = file.clone().split_off(prefix);
             let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk);
             res.push(Metrics {
@@ -328,7 +333,6 @@ fn consumer_covdir(receiver: JobReceiverCovDir) -> Result<(Vec<Metrics>, Vec<Str
                 is_complex,
                 coverage: covdir.coverage,
             });
-            
         }
     }
     Ok((res, files_ignored))
@@ -406,7 +410,7 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     res.push(max);
     res.push(min);
     let project_coverage = covs.get(&("PROJECT_ROOT".to_string())).unwrap().coverage;
-    Ok((res, files_ignored, complex_files,project_coverage))
+    Ok((res, files_ignored, complex_files, project_coverage))
 }
 ///Prints the reulst of the get_metric function in a csv file
 /// the structure is the following :
@@ -416,9 +420,15 @@ pub fn print_metrics_to_csv<A: AsRef<Path> + Copy>(
     files_ignored: Vec<String>,
     complex_files: Vec<Metrics>,
     csv_path: A,
-    project_coverage:f64,
+    project_coverage: f64,
 ) -> Result<(), SifisError> {
-    export_to_csv(csv_path.as_ref(), metrics, files_ignored, complex_files,project_coverage)
+    export_to_csv(
+        csv_path.as_ref(),
+        metrics,
+        files_ignored,
+        complex_files,
+        project_coverage,
+    )
 }
 
 pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
@@ -427,7 +437,7 @@ pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
     complex_files: Vec<Metrics>,
     json_output: A,
     project_folder: A,
-    project_coverage:f64,
+    project_coverage: f64,
 ) -> Result<(), SifisError> {
     export_to_json(
         project_folder.as_ref(),

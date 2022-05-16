@@ -51,24 +51,22 @@ fn main() -> Result<(), SifisError> {
     if args.n_threads == 0 {
         panic!("Number of threads must be greater than 0!")
     }
-    
-    let (metrics, files_ignored, complex_files,project_coverage) = if args.json_type == "covdir" {
+
+    let (metrics, files_ignored, complex_files, project_coverage) = if args.json_type == "covdir" {
         get_metrics_concurrent_covdir(
             &args.path_file,
             &args.path_json,
             metric_to_use,
             args.n_threads,
         )?
-    } 
-    else if args.json_type == "coveralls" {
+    } else if args.json_type == "coveralls" {
         get_metrics_concurrent(
             &args.path_file,
             &args.path_json,
             metric_to_use,
             args.n_threads,
         )?
-    }  
-    else {
+    } else {
         panic!("Wrong json type! Only covdir or coveralls are supported");
     };
     match &args.path_csv {
