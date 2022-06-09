@@ -16,24 +16,43 @@ to produce the coverage data used as `weighted-code-coverage` input.
 
 Run `weighted-code-coverage` on a project with the following command:
 
-```
-weighted-code-coverage --path_file /path/to/source/code --path_json /path/to/coveralls.json
-```
+USAGE:
+    weighted-code-coverage [OPTIONS] --path_file <PATH_FILE> --path_json <PATH_JSON>
 
 OPTIONS:
-
-    -c, --cognitive             Use cognitive metric instead of cyclomatic
-        --csv <CSV_OUTPUT>      Path where to save the output of the csv file
-    -h, --help                  Print help information
-    -j, --path_json <FILE>      Path to the grcov json in coveralls format
-        --json <JSON_OUTPUT>    Path where to save the output of the json file
-    -p, --path_file <FILE>      Path to the project folder
-    -V, --version               Print version information
+    -c, --complexity <COMPLEXITY>      Choose complexity metric to use [default: cyclomatic]
+                                       [possible values: cyclomatic, cognitive]
+        --csv <PATH_CSV>               Path where to save the output of the csv file
+    -f, --json-format <JSON_FORMAT>    Specify the type of format used between coveralls and covdir
+                                       [default: coveralls] [possible values: covdir, coveralls]
+    -h, --help                         Print help information
+    -j, --path_json <PATH_JSON>        Path to the grcov json in coveralls/covdir format
+        --json <JSON_OUTPUT>           Path where to save the output of the json file
+    -n, --n_threads <N_THREADS>        Number of threads to use for concurrency [default: 2]
+    -p, --path_file <PATH_FILE>        Path to the project folder
+    -t, --thresholds <THRESHOLDS>      Set four  tresholds in this order: SIFIS PLAIN, SIFIS
+                                       QUANTIZED, CRAP, SKUNK
+                                       
+                                           All the values must be floats
+                                       
+                                           All Thresholds has 0 as minimum value, thus no threshold
+                                       at all.
+                                       
+                                           SIFIS PLAIN has a max threshold of COMP*SLOC/PLOC
+                                       
+                                           SIFIS QUANTIZED has a max threshold of 2*SLOC/PLOC
+                                       
+                                           CRAP has a max threshold of COMP^2 +COMP
+                                       
+                                           SKUNK has a max threshold of COMP/25
+                                       [default: 35.0,1.5,35.0,30.0]
+    -v, --verbose                      Output the generated paths as they are produced
+    -V, --version                      Print version information
 
 Exemple:
 
 ```
-weighted-code-coverage  --path_file /path/to/source/code --path_json /path/to/coveralls.json -c --json /path/to/output.json
+weighted-code-coverage  --path_file /path/to/source/code --path_json /path/to/coveralls.json -c cyclomatic --json /path/to/output.json -f coveralls -t 35.0,1.5,35.0,30.0
 ```
 
 ## Steps to install and run weighted-code-coverage
