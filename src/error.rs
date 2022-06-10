@@ -1,15 +1,16 @@
-use std::sync::MutexGuard;
 use std::sync::PoisonError;
 
+use csv;
+use serde_json;
 use thiserror::Error;
 
 /// Customized error messages using thiserror library
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Error while reading Files from project folder")]
-    WrongFile(),
+    WrongFile(#[from] std::io::Error),
     #[error("Error while reading json")]
-    WrongJSONFile(),
+    WrongJSONFile(#[from] serde_json::Error),
     #[error("Error while converting JSON value to a type")]
     ConversionError(),
     #[error("Error while getting value from hashmap")]
@@ -21,7 +22,7 @@ pub enum Error {
     #[error("Error while guessing language")]
     LanguageError(),
     #[error("Error while writing on csv")]
-    WritingError(),
+    WritingError(#[from] csv::Error),
     #[error("Error during concurrency")]
     ConcurrentError(),
     #[error("Json Type is not supported! Only coveralls and covdir are supported.")]
@@ -34,28 +35,14 @@ pub enum Error {
         "Thresholds must be only 4 in this order -t SIFIS_PLAIN, SIFIS_QUANTIZED, CRAP, SKUNK"
     )]
     ThresholdsError(),
+    #[error("Error while sending job via sender")]
+    SenderError(),
 }
 
-impl From<std::io::Error> for Error {
-    fn from(_item: std::io::Error) -> Self {
-        Error::WrongFile()
-    }
-}
+pub type Result<T> = ::std::result::Result<T, Error>;
 
-impl From<serde_json::Error> for Error {
-    fn from(_item: serde_json::Error) -> Self {
-        Error::WrongJSONFile()
-    }
-}
-
-impl From<csv::Error> for Error {
-    fn from(_item: csv::Error) -> Self {
-        Error::WritingError()
-    }
-}
-
-impl<T> From<PoisonError<MutexGuard<'_, T>>> for Error {
-    fn from(_item: PoisonError<MutexGuard<'_, T>>) -> Self {
+impl<T> From<PoisonError<T>> for Error {
+    fn from(_item: PoisonError<T>) -> Self {
         Error::MutexError()
     }
 }

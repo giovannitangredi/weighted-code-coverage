@@ -1,7 +1,7 @@
 use rust_code_analysis::FuncSpace;
 use serde_json::Value;
 
-use crate::error::Error;
+use crate::error::*;
 use crate::utility::Complexity;
 
 const THRESHOLD: f64 = 15.;
@@ -28,35 +28,33 @@ pub(crate) fn sifis_plain(
     covs: &[Value],
     metric: Complexity,
     is_covdir: bool,
-) -> Result<(f64, f64), Error> {
+) -> Result<(f64, f64)> {
     let ploc = root.metrics.loc.ploc();
     let comp = match metric {
         Complexity::Cyclomatic => root.metrics.cyclomatic.cyclomatic_sum(),
         Complexity::Cognitive => root.metrics.cognitive.cognitive_sum(),
     };
-    let sum = covs
-        .iter()
-        .try_fold(0., |acc, line| -> Result<f64, Error> {
-            // Check if the line is null
-            let is_null = if is_covdir {
-                line.as_i64().ok_or(Error::ConversionError())? == -1
-            } else {
-                line.is_null()
-            };
-            let sum;
-            if !is_null {
-                // If the line is not null and is covered (cov>0) the add the complexity  to the sum
-                let cov = line.as_u64().ok_or(Error::ConversionError())?;
-                if cov > 0 {
-                    sum = acc + comp;
-                } else {
-                    sum = acc;
-                }
+    let sum = covs.iter().try_fold(0., |acc, line| -> Result<f64> {
+        // Check if the line is null
+        let is_null = if is_covdir {
+            line.as_i64().ok_or(Error::ConversionError())? == -1
+        } else {
+            line.is_null()
+        };
+        let sum;
+        if !is_null {
+            // If the line is not null and is covered (cov>0) the add the complexity  to the sum
+            let cov = line.as_u64().ok_or(Error::ConversionError())?;
+            if cov > 0 {
+                sum = acc + comp;
             } else {
                 sum = acc;
             }
-            Ok(sum)
-        })?;
+        } else {
+            sum = acc;
+        }
+        Ok(sum)
+    })?;
     Ok((sum / ploc, sum))
 }
 
@@ -68,13 +66,13 @@ pub(crate) fn sifis_quantized(
     covs: &[Value],
     metric: Complexity,
     is_covdir: bool,
-) -> Result<(f64, f64), Error> {
+) -> Result<(f64, f64)> {
     let ploc = root.metrics.loc.ploc();
     let sum =
     //For each line find the minimum space and get complexity value then sum 1 if comp>threshold  else sum 1
         covs.iter()
             .enumerate()
-            .try_fold(0., |acc, (i, line)| -> Result<f64, Error> {
+            .try_fold(0., |acc, (i, line)| -> Result<f64> {
                 // Check if the line is null
                 let is_null = if is_covdir {
                     line.as_i64().ok_or(Error::ConversionError())? == -1

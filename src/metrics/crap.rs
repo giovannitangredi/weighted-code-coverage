@@ -1,7 +1,7 @@
 use rust_code_analysis::FuncSpace;
 use serde_json::Value;
 
-use crate::error::Error;
+use crate::error::*;
 use crate::utility::{get_coverage_perc, Complexity};
 
 // Calculate the CRAP value  for the given file
@@ -12,7 +12,7 @@ pub(crate) fn crap(
     covs: &[Value],
     metric: Complexity,
     coverage: Option<f64>,
-) -> Result<f64, Error> {
+) -> Result<f64> {
     let comp = match metric {
         Complexity::Cyclomatic => root.metrics.cyclomatic.cyclomatic_sum(),
         Complexity::Cognitive => root.metrics.cognitive.cognitive_sum(),

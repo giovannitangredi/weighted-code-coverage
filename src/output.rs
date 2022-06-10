@@ -4,7 +4,7 @@ use std::path::*;
 use csv;
 use serde_json::json;
 
-use crate::error::Error;
+use crate::error::*;
 use crate::Metrics;
 
 // Export metrics on a csv in the specified path
@@ -14,7 +14,7 @@ pub(crate) fn export_to_csv(
     files_ignored: Vec<String>,
     complex_files: Vec<Metrics>,
     project_coverage: f64,
-) -> Result<(), Error> {
+) -> Result<()> {
     let mut writer = csv::Writer::from_path(csv_path)?;
     writer.write_record(&[
         "FILE",
@@ -26,7 +26,7 @@ pub(crate) fn export_to_csv(
         "IS COMPLEX",
         "FILE PATH",
     ])?;
-    metrics.iter().try_for_each(|m| -> Result<(), Error> {
+    metrics.iter().try_for_each(|m| -> Result<()> {
         writer.write_record(&[
             &m.file,
             &format!("{:.3}", m.sifis_plain),
@@ -59,21 +59,19 @@ pub(crate) fn export_to_csv(
         "----------",
         "----------",
     ])?;
-    complex_files
-        .iter()
-        .try_for_each(|m| -> Result<(), Error> {
-            writer.write_record(&[
-                &m.file,
-                &format!("{:.3}", m.sifis_plain),
-                &format!("{:.3}", m.sifis_quantized),
-                &format!("{:.3}", m.crap),
-                &format!("{:.3}", m.skunk),
-                &format!("{}", false),
-                &format!("{}", m.is_complex),
-                &m.file_path,
-            ])?;
-            Ok(())
-        })?;
+    complex_files.iter().try_for_each(|m| -> Result<()> {
+        writer.write_record(&[
+            &m.file,
+            &format!("{:.3}", m.sifis_plain),
+            &format!("{:.3}", m.sifis_quantized),
+            &format!("{:.3}", m.crap),
+            &format!("{:.3}", m.skunk),
+            &format!("{}", false),
+            &format!("{}", m.is_complex),
+            &m.file_path,
+        ])?;
+        Ok(())
+    })?;
     writer.write_record(&[
         "TOTAL COMPLEX FILES",
         format!("{:?}", complex_files.len()).as_str(),
@@ -94,21 +92,19 @@ pub(crate) fn export_to_csv(
         "----------",
         "----------",
     ])?;
-    files_ignored
-        .iter()
-        .try_for_each(|file| -> Result<(), Error> {
-            writer.write_record(&[
-                file.as_str(),
-                format!("{:.3}", 0.).as_str(),
-                format!("{:.3}", 0.).as_str(),
-                format!("{:.3}", 0.).as_str(),
-                format!("{:.3}", 0.).as_str(),
-                format!("{}", true).as_str(),
-                "-",
-                "-",
-            ])?;
-            Ok(())
-        })?;
+    files_ignored.iter().try_for_each(|file| -> Result<()> {
+        writer.write_record(&[
+            file.as_str(),
+            format!("{:.3}", 0.).as_str(),
+            format!("{:.3}", 0.).as_str(),
+            format!("{:.3}", 0.).as_str(),
+            format!("{:.3}", 0.).as_str(),
+            format!("{}", true).as_str(),
+            "-",
+            "-",
+        ])?;
+        Ok(())
+    })?;
     writer.write_record(&[
         "TOTAL FILES IGNORED",
         format!("{:?}", files_ignored.len()).as_str(),
@@ -131,7 +127,7 @@ pub(crate) fn export_to_json(
     files_ignored: Vec<String>,
     complex_files: Vec<Metrics>,
     project_coverage: f64,
-) -> Result<(), Error> {
+) -> Result<()> {
     let n_files = files_ignored.len();
     let number_of_complex_files = complex_files.len();
     let json = json!({

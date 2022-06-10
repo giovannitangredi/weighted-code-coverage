@@ -2,7 +2,6 @@ pub mod error;
 pub mod metrics;
 pub mod output;
 pub mod utility;
-use crate::error::Error;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -16,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::debug;
 
+use crate::error::*;
 use crate::metrics::crap::crap;
 use crate::metrics::sifis::{sifis_plain, sifis_quantized};
 use crate::metrics::skunk::skunk_nosmells;
@@ -109,7 +109,7 @@ pub fn get_metrics_output(
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
     complex_files: Vec<Metrics>,
-) -> Result<(), Error> {
+) -> Result<()> {
     println!(
         "{0: <20} | {1: <20} | {2: <20} | {3: <20} | {4: <20} | {5: <20} | {6: <30}",
         "FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNKSCORE", "IS_COMPLEX", "FILE PATH"
@@ -133,7 +133,7 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     json_path: B,
     metric: Complexity,
     thresholds: &[f64],
-) -> Result<Output, Error> {
+) -> Result<Output> {
     if thresholds.len() != 4 {
         return Err(Error::ThresholdsError());
     }
@@ -282,7 +282,7 @@ impl Config {
 type JobReceiver = Receiver<Option<JobItem>>;
 
 // Consumer function run by ead independent thread
-fn consumer(receiver: JobReceiver, cfg: &Config) -> Result<(), Error> {
+fn consumer(receiver: JobReceiver, cfg: &Config) -> Result<()> {
     // Get all shared data
     let files_ignored = &cfg.files_ignored;
     let res = &cfg.res;
@@ -389,7 +389,7 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     metric: Complexity,
     n_threads: usize,
     thresholds: &[f64],
-) -> Result<Output, Error> {
+) -> Result<Output> {
     if thresholds.len() != 4 {
         return Err(Error::ThresholdsError());
     }
@@ -416,7 +416,7 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         let r = receiver.clone();
         let config = cfg.clone();
         // Launch n_threads consume threads
-        let h = thread::spawn(move || -> Result<(), Error> { consumer(r, &config) });
+        let h = thread::spawn(move || -> Result<()> { consumer(r, &config) });
         handlers.push(h);
     }
     let prefix = files_path
@@ -426,25 +426,27 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         .to_string()
         .len();
     // Send all chunks to the consumers
-    chunks.iter().try_for_each(|chunk: &Vec<String>| {
-        let job = JobItem::new(
-            chunk.to_vec(),
-            covs.clone(),
-            metric,
-            prefix,
-            thresholds.to_vec(),
-        );
-        debug!("Sending job: {:?}", job);
-        if let Err(_e) = sender.send(Some(job)) {
-            return Err(Error::ConcurrentError());
-        }
-        Ok(())
-    })?;
+    chunks
+        .iter()
+        .try_for_each(|chunk: &Vec<String>| -> Result<()> {
+            let job = JobItem::new(
+                chunk.to_vec(),
+                covs.clone(),
+                metric,
+                prefix,
+                thresholds.to_vec(),
+            );
+            debug!("Sending job: {:?}", job);
+            if let Err(_e) = sender.send(Some(job)) {
+                return Err(Error::SenderError());
+            }
+            Ok(())
+        })?;
     // Stops all consumers by poisoning them
     debug!("Poisoning Threads...");
     handlers.iter().try_for_each(|_| {
         if let Err(_e) = sender.send(None) {
-            return Err(Error::ConcurrentError());
+            return Err(Error::SenderError());
         }
         Ok(())
     })?;
@@ -514,7 +516,7 @@ impl fmt::Debug for JobItemCovDir {
 type JobReceiverCovDir = Receiver<Option<JobItemCovDir>>;
 
 // Consumer thread for the covdir format
-fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &Config) -> Result<(), Error> {
+fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &Config) -> Result<()> {
     // Get all shared variables
     let files_ignored = &cfg.files_ignored;
     let res = &cfg.res;
@@ -603,7 +605,7 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     metric: Complexity,
     n_threads: usize,
     thresholds: &[f64],
-) -> Result<Output, Error> {
+) -> Result<Output> {
     if thresholds.len() != 4 {
         return Err(Error::ThresholdsError());
     }
@@ -630,7 +632,7 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     for _ in 0..n_threads {
         let r = receiver.clone();
         let config = cfg.clone();
-        let h = thread::spawn(move || -> Result<(), Error> { consumer_covdir(r, &config) });
+        let h = thread::spawn(move || -> Result<()> { consumer_covdir(r, &config) });
         handlers.push(h);
     }
     let prefix = files_path
@@ -649,7 +651,7 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
         );
         debug!("Sending job: {:?}", job);
         if let Err(_e) = sender.send(Some(job)) {
-            return Err(Error::ConcurrentError());
+            return Err(Error::SenderError());
         }
         Ok(())
     })?;
@@ -657,7 +659,7 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     // Stops all jobs by poisoning
     handlers.iter().try_for_each(|_| {
         if let Err(_e) = sender.send(None) {
-            return Err(Error::ConcurrentError());
+            return Err(Error::SenderError());
         }
         Ok(())
     })?;
@@ -699,7 +701,7 @@ pub fn print_metrics_to_csv<A: AsRef<Path> + Copy>(
     complex_files: Vec<Metrics>,
     csv_path: A,
     project_coverage: f64,
-) -> Result<(), Error> {
+) -> Result<()> {
     debug!("Exporting to csv...");
     export_to_csv(
         csv_path.as_ref(),
@@ -718,7 +720,7 @@ pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
     json_output: A,
     project_folder: A,
     project_coverage: f64,
-) -> Result<(), Error> {
+) -> Result<()> {
     debug!("Exporting to json...");
     export_to_json(
         project_folder.as_ref(),

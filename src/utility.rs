@@ -9,7 +9,7 @@ use serde_json::Map;
 use serde_json::Value;
 use tracing::debug;
 
-use crate::error::Error;
+use crate::error::*;
 use crate::Config;
 use crate::Metrics;
 
@@ -65,7 +65,7 @@ fn check_ext(ext: &OsStr) -> bool {
 
 // This function read all  the files in the project folder
 // Returns all the source files, ignoring the other files or an error in case of problems
-pub(crate) fn read_files(files_path: &Path) -> Result<Vec<String>, Error> {
+pub(crate) fn read_files(files_path: &Path) -> Result<Vec<String>> {
     debug!("REading files in project folder: {:?}", files_path);
     let mut vec = vec![];
     let mut first = PathBuf::new();
@@ -74,7 +74,7 @@ pub(crate) fn read_files(files_path: &Path) -> Result<Vec<String>, Error> {
     while let Some(path) = stack.pop() {
         if path.is_dir() {
             let mut paths = fs::read_dir(&path)?;
-            paths.try_for_each(|p| -> Result<(), Error> {
+            paths.try_for_each(|p| -> Result<()> {
                 let pa = p?.path();
                 stack.push(pa);
                 Ok(())
@@ -92,14 +92,14 @@ pub(crate) fn read_files(files_path: &Path) -> Result<Vec<String>, Error> {
 
 // This function read the content of the coveralls  json file obtain by using grcov
 // Return a HashMap with all the files arrays of covered lines using the path to the file as key
-pub(crate) fn read_json(file: String, prefix: &str) -> Result<HashMap<String, Vec<Value>>, Error> {
+pub(crate) fn read_json(file: String, prefix: &str) -> Result<HashMap<String, Vec<Value>>> {
     debug!("Reading coveralls json...");
     let val: Value = serde_json::from_str(file.as_str())?;
     let vec = val["source_files"]
         .as_array()
         .ok_or(Error::ReadingJSONError())?;
     let mut covs = HashMap::<String, Vec<Value>>::new();
-    vec.iter().try_for_each(|x| -> Result<(), Error> {
+    vec.iter().try_for_each(|x| -> Result<()> {
         let name = Path::new(prefix).join(x["name"].as_str().ok_or(Error::PathConversionError())?);
         let value = x["coverage"]
             .as_array()
@@ -122,10 +122,7 @@ pub(crate) struct Covdir {
 
 // This function read the content of the coveralls  json file obtain by using grcov
 // Return a HashMap with all the files arrays of covered lines using the path to the file as key
-pub(crate) fn read_json_covdir(
-    file: String,
-    map_prefix: &str,
-) -> Result<HashMap<String, Covdir>, Error> {
+pub(crate) fn read_json_covdir(file: String, map_prefix: &str) -> Result<HashMap<String, Covdir>> {
     debug!("Reading covdir json...");
     let val: Map<String, Value> = serde_json::from_str(file.as_str())?;
     let mut res: HashMap<String, Covdir> = HashMap::<String, Covdir>::new();
@@ -147,59 +144,58 @@ pub(crate) fn read_json_covdir(
     };
     res.insert("PROJECT_ROOT".to_string(), covdir);
     while let Some((val, prefix)) = stack.pop() {
-        val.iter()
-            .try_for_each(|(key, value)| -> Result<(), Error> {
-                if value["children"].is_object() {
-                    if prefix.is_empty() {
-                        stack.push((
-                            value["children"]
-                                .as_object()
-                                .ok_or(Error::ConversionError())?,
-                            prefix.to_owned() + key.as_str(),
-                        ));
-                    } else {
-                        let slash = if cfg!(windows) { "\\" } else { "/" };
-                        stack.push((
-                            value["children"]
-                                .as_object()
-                                .ok_or(Error::ConversionError())?,
-                            prefix.to_owned() + slash + key.as_str(),
-                        ));
-                    }
-                }
-                let name = value["name"]
-                    .as_str()
-                    .ok_or(Error::ConversionError())?
-                    .to_string();
-                let path = Path::new(&name);
-                let ext = path.extension();
-
-                if ext.is_some() && check_ext(ext.ok_or(Error::PathConversionError())?) {
-                    let covdir = Covdir {
-                        name,
-                        arr: value["coverage"]
-                            .as_array()
-                            .ok_or(Error::ConversionError())?
-                            .to_vec(),
-                        coverage: value["coveragePercent"]
-                            .as_f64()
+        val.iter().try_for_each(|(key, value)| -> Result<()> {
+            if value["children"].is_object() {
+                if prefix.is_empty() {
+                    stack.push((
+                        value["children"]
+                            .as_object()
                             .ok_or(Error::ConversionError())?,
-                    };
-                    let name_path = format!("{}/{}", prefix, key);
-                    res.insert(map_prefix.to_owned() + name_path.as_str(), covdir);
+                        prefix.to_owned() + key.as_str(),
+                    ));
+                } else {
+                    let slash = if cfg!(windows) { "\\" } else { "/" };
+                    stack.push((
+                        value["children"]
+                            .as_object()
+                            .ok_or(Error::ConversionError())?,
+                        prefix.to_owned() + slash + key.as_str(),
+                    ));
                 }
-                Ok(())
-            })?;
+            }
+            let name = value["name"]
+                .as_str()
+                .ok_or(Error::ConversionError())?
+                .to_string();
+            let path = Path::new(&name);
+            let ext = path.extension();
+
+            if ext.is_some() && check_ext(ext.ok_or(Error::PathConversionError())?) {
+                let covdir = Covdir {
+                    name,
+                    arr: value["coverage"]
+                        .as_array()
+                        .ok_or(Error::ConversionError())?
+                        .to_vec(),
+                    coverage: value["coveragePercent"]
+                        .as_f64()
+                        .ok_or(Error::ConversionError())?,
+                };
+                let name_path = format!("{}/{}", prefix, key);
+                res.insert(map_prefix.to_owned() + name_path.as_str(), covdir);
+            }
+            Ok(())
+        })?;
     }
     Ok(res)
 }
 
 // Get the code coverage in percentage
-pub(crate) fn get_coverage_perc(covs: &[Value]) -> Result<f64, Error> {
+pub(crate) fn get_coverage_perc(covs: &[Value]) -> Result<f64> {
     // Count the number of covered lines
     let (tot_lines, covered_lines) =
         covs.iter()
-            .try_fold((0., 0.), |acc, line| -> Result<(f64, f64), Error> {
+            .try_fold((0., 0.), |acc, line| -> Result<(f64, f64)> {
                 let is_null = line.is_null();
                 let sum;
                 if !is_null {
@@ -218,11 +214,11 @@ pub(crate) fn get_coverage_perc(covs: &[Value]) -> Result<f64, Error> {
 }
 
 // Get the code coverage in percentage
-pub(crate) fn get_covered_lines(covs: &[Value]) -> Result<(f64, f64), Error> {
+pub(crate) fn get_covered_lines(covs: &[Value]) -> Result<(f64, f64)> {
     // Count the number of covered lines
     let (tot_lines, covered_lines) =
         covs.iter()
-            .try_fold((0., 0.), |acc, line| -> Result<(f64, f64), Error> {
+            .try_fold((0., 0.), |acc, line| -> Result<(f64, f64)> {
                 let is_null = line.is_null();
                 let sum;
                 if !is_null {
@@ -241,7 +237,7 @@ pub(crate) fn get_covered_lines(covs: &[Value]) -> Result<(f64, f64), Error> {
 }
 
 // Get the root FuncSpace from a file
-pub(crate) fn get_root(path: &Path) -> Result<FuncSpace, Error> {
+pub(crate) fn get_root(path: &Path) -> Result<FuncSpace> {
     let data = read_file(path)?;
     let lang = guess_language(&data, path)
         .0
@@ -306,7 +302,7 @@ pub(crate) fn get_cumulative_values(
 
 // Calculate SIFIS PLAIN , SIFIS QUANTIZED, CRA and SKUNKSCORE for the entire project
 // Using the sum values computed before
-pub(crate) fn get_project_metrics(project_coverage: f64, cfg: &Config) -> Result<Metrics, Error> {
+pub(crate) fn get_project_metrics(project_coverage: f64, cfg: &Config) -> Result<Metrics> {
     let sifis_plain_sum = *cfg.sifis_plain_sum.lock()?;
     let sifis_quantized_sum = *cfg.sifis_quantized_sum.lock()?;
     let ploc_sum = *cfg.ploc_sum.lock()?;

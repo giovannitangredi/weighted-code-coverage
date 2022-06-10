@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use weighted_code_coverage::error::Error;
+use weighted_code_coverage::error::*;
 use weighted_code_coverage::utility::Complexity;
 use weighted_code_coverage::utility::JsonFormat;
 use weighted_code_coverage::*;
@@ -24,7 +24,7 @@ struct Thresholds(Vec<f64>);
 impl std::str::FromStr for Thresholds {
     type Err = Box<dyn std::error::Error + Send + Sync + 'static>;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         Ok(Thresholds(
             s.split(',')
                 .map(|x| x.trim().parse::<f64>().unwrap())
@@ -66,7 +66,7 @@ struct Args {
     verbose: bool,
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<()> {
     let args = Args::parse();
     let metric_to_use = args.complexity;
     let thresholds = args.thresholds.0;

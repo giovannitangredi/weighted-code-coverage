@@ -1,7 +1,7 @@
 use rust_code_analysis::FuncSpace;
 use serde_json::Value;
 
-use crate::error::Error;
+use crate::error::*;
 use crate::utility::{get_coverage_perc, Complexity};
 
 // Calculate the Skunkscore value  for the given file
@@ -13,7 +13,7 @@ pub(crate) fn skunk_nosmells(
     covs: &[Value],
     metric: Complexity,
     coverage: Option<f64>,
-) -> Result<f64, Error> {
+) -> Result<f64> {
     let complexity_factor = 25.0;
     let comp = match metric {
         Complexity::Cyclomatic => root.metrics.cyclomatic.cyclomatic_sum(),
