@@ -1,6 +1,8 @@
+pub mod error;
 pub mod metrics;
 pub mod output;
 pub mod utility;
+use crate::error::Error;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -107,7 +109,7 @@ pub fn get_metrics_output(
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
     complex_files: Vec<Metrics>,
-) -> Result<(), SifisError> {
+) -> Result<(), Error> {
     println!(
         "{0: <20} | {1: <20} | {2: <20} | {3: <20} | {4: <20} | {5: <20} | {6: <30}",
         "FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNKSCORE", "IS_COMPLEX", "FILE PATH"
@@ -131,9 +133,9 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     json_path: B,
     metric: Complexity,
     thresholds: &[f64],
-) -> Result<Output, SifisError> {
+) -> Result<Output, Error> {
     if thresholds.len() != 4 {
-        return Err(SifisError::ThesholdsError());
+        return Err(Error::ThresholdsError());
     }
     let vec = read_files(files_path.as_ref())?;
     let mut covered_lines = 0.;
@@ -146,15 +148,15 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         files_path
             .as_ref()
             .to_str()
-            .ok_or(SifisError::PathConversionError())?,
+            .ok_or(Error::PathConversionError())?,
     )?;
     for path in vec {
         let p = Path::new(&path);
         let file = p
             .file_name()
-            .ok_or(SifisError::PathConversionError())?
+            .ok_or(Error::PathConversionError())?
             .to_str()
-            .ok_or(SifisError::PathConversionError())?
+            .ok_or(Error::PathConversionError())?
             .to_string();
         let arr = match covs.get(&path) {
             Some(arr) => arr.to_vec(),
@@ -175,7 +177,7 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             files_path
                 .as_ref()
                 .to_str()
-                .ok_or(SifisError::PathConversionError())?
+                .ok_or(Error::PathConversionError())?
                 .len(),
         );
         let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk, thresholds);
@@ -200,10 +202,10 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     Ok((res, files_ignored, complex_files, project_coverage))
 }
 
-// job received by the comsumer threads
+// job received by the consumer threads
 #[derive(Clone)]
 struct JobItem {
-    chunck: Vec<String>,
+    chunk: Vec<String>,
     covs: HashMap<String, Vec<Value>>,
     metric: Complexity,
     prefix: usize,
@@ -211,14 +213,14 @@ struct JobItem {
 }
 impl JobItem {
     fn new(
-        chunck: Vec<String>,
+        chunk: Vec<String>,
         covs: HashMap<String, Vec<Value>>,
         metric: Complexity,
         prefix: usize,
         thresholds: Vec<f64>,
     ) -> Self {
         Self {
-            chunck,
+            chunk,
             covs,
             metric,
             prefix,
@@ -232,7 +234,7 @@ impl fmt::Debug for JobItem {
         write!(
             f,
             "Job: chunks:{:?}, metric:{}, prefix:{:?}, thresholds: {:?}",
-            self.chunck, self.metric, self.prefix, self.thresholds
+            self.chunk, self.metric, self.prefix, self.thresholds
         )
     }
 }
@@ -280,7 +282,7 @@ impl Config {
 type JobReceiver = Receiver<Option<JobItem>>;
 
 // Consumer function run by ead independent thread
-fn consumer(receiver: JobReceiver, cfg: &Config) -> Result<(), SifisError> {
+fn consumer(receiver: JobReceiver, cfg: &Config) -> Result<(), Error> {
     // Get all shared data
     let files_ignored = &cfg.files_ignored;
     let res = &cfg.res;
@@ -296,21 +298,21 @@ fn consumer(receiver: JobReceiver, cfg: &Config) -> Result<(), SifisError> {
         }
         // Cannot panic because of the check immediately above.
         let job = job.unwrap();
-        let chunck = job.chunck;
+        let chunk = job.chunk;
         let covs = job.covs;
         let metric = job.metric;
         let prefix = job.prefix;
         let thresholds = job.thresholds;
-        // For each file in the chunck received
-        for file in chunck {
+        // For each file in the chunk received
+        for file in chunk {
             let path = Path::new(&file);
             let file_name = path
                 .file_name()
-                .ok_or(SifisError::PathConversionError())?
+                .ok_or(Error::PathConversionError())?
                 .to_str()
-                .ok_or(SifisError::PathConversionError())?
+                .ok_or(Error::PathConversionError())?
                 .to_string();
-            // Get the coverage vector from the coverrals file
+            // Get the coverage vector from the coveralls file
             // if not present the file will be added to the files ignored
             let arr = match covs.get(&file) {
                 Some(arr) => arr.to_vec(),
@@ -367,23 +369,18 @@ fn consumer(receiver: JobReceiver, cfg: &Config) -> Result<(), SifisError> {
     }
     Ok(())
 }
-// Chuncks the vector of files in multiple chuck to be used by threads
-// It will return number of chunck with the same number of elements usually equal
+// Chunks the vector of files in multiple chunk to be used by threads
+// It will return number of chunk with the same number of elements usually equal
 // Or very close to n_threads
-fn chunck_vector(vec: Vec<String>, n_threads: usize) -> Vec<Vec<String>> {
-    let chuncks = vec.chunks((vec.len() / n_threads).max(1));
-    chuncks
-        .map(|chunck| {
-            chunck
-                .iter()
-                .map(|c| c.to_string())
-                .collect::<Vec<String>>()
-        })
+fn chunk_vector(vec: Vec<String>, n_threads: usize) -> Vec<Vec<String>> {
+    let chunks = vec.chunks((vec.len() / n_threads).max(1));
+    chunks
+        .map(|chunk| chunk.iter().map(|c| c.to_string()).collect::<Vec<String>>())
         .collect::<Vec<Vec<String>>>()
 }
 
 /// This Function get the folder of the repo to analyzed and the path to the coveralls file obtained using grcov
-/// It also takes as argumente the complexity metrics that must be used between cognitive or cyclomatic
+/// It also takes as arguments the complexity metrics that must be used between cognitive or cyclomatic
 /// If the a file is not found in the json that files will be skipped
 /// It returns the  tuple (res, files_ignored, complex_files, project_coverage)
 pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
@@ -392,9 +389,9 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     metric: Complexity,
     n_threads: usize,
     thresholds: &[f64],
-) -> Result<Output, SifisError> {
+) -> Result<Output, Error> {
     if thresholds.len() != 4 {
-        return Err(SifisError::ThesholdsError());
+        return Err(Error::ThresholdsError());
     }
     // Take all the files starting from the given project folder
     let vec = read_files(files_path.as_ref())?;
@@ -405,33 +402,33 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         files_path
             .as_ref()
             .to_str()
-            .ok_or(SifisError::PathConversionError())?,
+            .ok_or(Error::PathConversionError())?,
     )?;
     let mut handlers = vec![];
     // Create a new vonfig with  all needed mutexes
     let cfg = Config::new();
     let (sender, receiver) = unbounded();
     // Chunks the files vector
-    let chuncks = chunck_vector(vec, n_threads);
-    debug!("Files divided in {} chuncks", chuncks.len());
+    let chunks = chunk_vector(vec, n_threads);
+    debug!("Files divided in {} chunks", chunks.len());
     debug!("Launching all {} threads", n_threads);
     for _ in 0..n_threads {
         let r = receiver.clone();
         let config = cfg.clone();
         // Launch n_threads consume threads
-        let h = thread::spawn(move || -> Result<(), SifisError> { consumer(r, &config) });
+        let h = thread::spawn(move || -> Result<(), Error> { consumer(r, &config) });
         handlers.push(h);
     }
     let prefix = files_path
         .as_ref()
         .to_str()
-        .ok_or(SifisError::PathConversionError())?
+        .ok_or(Error::PathConversionError())?
         .to_string()
         .len();
     // Send all chunks to the consumers
-    chuncks.iter().try_for_each(|chunck: &Vec<String>| {
+    chunks.iter().try_for_each(|chunk: &Vec<String>| {
         let job = JobItem::new(
-            chunck.to_vec(),
+            chunk.to_vec(),
             covs.clone(),
             metric,
             prefix,
@@ -439,15 +436,15 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         );
         debug!("Sending job: {:?}", job);
         if let Err(_e) = sender.send(Some(job)) {
-            return Err(SifisError::ConcurrentError());
+            return Err(Error::ConcurrentError());
         }
         Ok(())
     })?;
-    // Stops all comsumers by poisoning them
+    // Stops all consumers by poisoning them
     debug!("Poisoning Threads...");
     handlers.iter().try_for_each(|_| {
         if let Err(_e) = sender.send(None) {
-            return Err(SifisError::ConcurrentError());
+            return Err(Error::ConcurrentError());
         }
         Ok(())
     })?;
@@ -478,9 +475,9 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     ))
 }
 
-// Job received by the comsumer threads for the covdir version
+// Job received by the consumer threads for the covdir version
 struct JobItemCovDir {
-    chunck: Vec<String>,
+    chunk: Vec<String>,
     covs: HashMap<String, Covdir>,
     metric: Complexity,
     prefix: usize,
@@ -489,14 +486,14 @@ struct JobItemCovDir {
 
 impl JobItemCovDir {
     fn new(
-        chunck: Vec<String>,
+        chunk: Vec<String>,
         covs: HashMap<String, Covdir>,
         metric: Complexity,
         prefix: usize,
         thresholds: Vec<f64>,
     ) -> Self {
         Self {
-            chunck,
+            chunk,
             covs,
             metric,
             prefix,
@@ -509,15 +506,15 @@ impl fmt::Debug for JobItemCovDir {
         write!(
             f,
             "Job: chunks:{:?}, metric:{}, prefix:{:?}, thresholds: {:?}",
-            self.chunck, self.metric, self.prefix, self.thresholds
+            self.chunk, self.metric, self.prefix, self.thresholds
         )
     }
 }
 
 type JobReceiverCovDir = Receiver<Option<JobItemCovDir>>;
 
-// Consumee thread for the covdir format
-fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &Config) -> Result<(), SifisError> {
+// Consumer thread for the covdir format
+fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &Config) -> Result<(), Error> {
     // Get all shared variables
     let files_ignored = &cfg.files_ignored;
     let res = &cfg.res;
@@ -531,21 +528,21 @@ fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &Config) -> Result<(), Sifi
         }
         // Cannot panic because of the check immediately above.
         let job = job.unwrap();
-        let chunck = job.chunck;
+        let chunk = job.chunk;
         let covs = job.covs;
         let metric = job.metric;
         let prefix = job.prefix;
         let thresholds = job.thresholds;
-        // For each file in the chunck
-        for file in chunck {
+        // For each file in the chunk
+        for file in chunk {
             let path = Path::new(&file);
             let file_name = path
                 .file_name()
-                .ok_or(SifisError::PathConversionError())?
+                .ok_or(Error::PathConversionError())?
                 .to_str()
-                .ok_or(SifisError::PathConversionError())?
+                .ok_or(Error::PathConversionError())?
                 .to_string();
-            // Get the coverage vector from the coverrals file
+            // Get the coverage vector from the coveralls file
             // If not present the file will be added to the files ignored
             let covdir = match covs.get(&file) {
                 Some(covdir) => covdir,
@@ -597,7 +594,7 @@ fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &Config) -> Result<(), Sifi
 }
 
 /// This Function get the folder of the repo to analyzed and the path to the covdir file obtained using grcov
-/// It also takes as argumente the complexity metrics that must be used between cognitive or cyclomatic
+/// It also takes as arguments the complexity metrics that must be used between cognitive or cyclomatic
 /// If the a file is not found in the json that files will be skipped
 /// It returns the  tuple (res, files_ignored, complex_files, project_coverage)
 pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
@@ -606,45 +603,45 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     metric: Complexity,
     n_threads: usize,
     thresholds: &[f64],
-) -> Result<Output, SifisError> {
+) -> Result<Output, Error> {
     if thresholds.len() != 4 {
-        return Err(SifisError::ThesholdsError());
+        return Err(Error::ThresholdsError());
     }
     // Get all the files from project folder
     let vec = read_files(files_path.as_ref())?;
-    // Read covdir json and obtain all covarage informations
+    // Read covdir json and obtain all coverage information
     let file = fs::read_to_string(json_path)?;
     let covs = read_json_covdir(
         file,
         files_path
             .as_ref()
             .to_str()
-            .ok_or(SifisError::PathConversionError())?,
+            .ok_or(Error::PathConversionError())?,
     )?;
     let mut handlers = vec![];
     // Create a new Config all needed mutexes
     let cfg = Config::new();
     let (sender, receiver) = unbounded();
     // Chunks the files vector
-    let chuncks = chunck_vector(vec, n_threads);
-    debug!("Files divided in {} chuncks", chuncks.len());
+    let chunks = chunk_vector(vec, n_threads);
+    debug!("Files divided in {} chunks", chunks.len());
     debug!("Launching all {} threads", n_threads);
     // Launch n_threads consumer threads
     for _ in 0..n_threads {
         let r = receiver.clone();
         let config = cfg.clone();
-        let h = thread::spawn(move || -> Result<(), SifisError> { consumer_covdir(r, &config) });
+        let h = thread::spawn(move || -> Result<(), Error> { consumer_covdir(r, &config) });
         handlers.push(h);
     }
     let prefix = files_path
         .as_ref()
         .to_str()
-        .ok_or(SifisError::PathConversionError())?
+        .ok_or(Error::PathConversionError())?
         .to_string()
         .len();
-    chuncks.iter().try_for_each(|chunck| {
+    chunks.iter().try_for_each(|chunk| {
         let job = JobItemCovDir::new(
-            chunck.to_vec(),
+            chunk.to_vec(),
             covs.clone(),
             metric,
             prefix,
@@ -652,7 +649,7 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
         );
         debug!("Sending job: {:?}", job);
         if let Err(_e) = sender.send(Some(job)) {
-            return Err(SifisError::ConcurrentError());
+            return Err(Error::ConcurrentError());
         }
         Ok(())
     })?;
@@ -660,7 +657,7 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     // Stops all jobs by poisoning
     handlers.iter().try_for_each(|_| {
         if let Err(_e) = sender.send(None) {
-            return Err(SifisError::ConcurrentError());
+            return Err(Error::ConcurrentError());
         }
         Ok(())
     })?;
@@ -673,7 +670,7 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     let mut res = cfg.res.lock()?;
     let project_coverage = covs
         .get(&("PROJECT_ROOT".to_string()))
-        .ok_or(SifisError::HashMapError())?
+        .ok_or(Error::HashMapError())?
         .coverage;
     // Get final  metrics for all the project
     let project_metric = get_project_metrics(project_coverage, &cfg)?;
@@ -693,7 +690,7 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     ))
 }
 
-/// Prints the the given  metrics ,files ignored and comlex files  in a csv format
+/// Prints the the given  metrics ,files ignored and complex files  in a csv format
 /// The structure is the following :
 /// "FILE","SIFIS PLAIN","SIFIS QUANTIZED","CRAP","SKUNK","IGNORED","IS COMPLEX","FILE PATH",
 pub fn print_metrics_to_csv<A: AsRef<Path> + Copy>(
@@ -702,7 +699,7 @@ pub fn print_metrics_to_csv<A: AsRef<Path> + Copy>(
     complex_files: Vec<Metrics>,
     csv_path: A,
     project_coverage: f64,
-) -> Result<(), SifisError> {
+) -> Result<(), Error> {
     debug!("Exporting to csv...");
     export_to_csv(
         csv_path.as_ref(),
@@ -713,7 +710,7 @@ pub fn print_metrics_to_csv<A: AsRef<Path> + Copy>(
     )
 }
 
-/// Prints the the given  metrics ,files ignored and comlex files  in a json format
+/// Prints the the given  metrics ,files ignored and complex files  in a json format
 pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
     metrics: Vec<Metrics>,
     files_ignored: Vec<String>,
@@ -721,7 +718,7 @@ pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
     json_output: A,
     project_folder: A,
     project_coverage: f64,
-) -> Result<(), SifisError> {
+) -> Result<(), Error> {
     debug!("Exporting to json...");
     export_to_json(
         project_folder.as_ref(),

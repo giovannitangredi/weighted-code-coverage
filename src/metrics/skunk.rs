@@ -1,18 +1,19 @@
 use rust_code_analysis::FuncSpace;
 use serde_json::Value;
 
-use crate::utility::{get_coverage_perc, Complexity, SifisError};
+use crate::error::Error;
+use crate::utility::{get_coverage_perc, Complexity};
 
 // Calculate the Skunkscore value  for the given file
 // https://www.fastruby.io/blog/code-quality/intruducing-skunk-stink-score-calculator.html
-// In this implementation the code smeels are ignored.
+// In this implementation the code smells are ignored.
 // Return the value in case of success and an specif error in case of fails
 pub(crate) fn skunk_nosmells(
     root: &FuncSpace,
     covs: &[Value],
     metric: Complexity,
     coverage: Option<f64>,
-) -> Result<f64, SifisError> {
+) -> Result<f64, Error> {
     let complexity_factor = 25.0;
     let comp = match metric {
         Complexity::Cyclomatic => root.metrics.cyclomatic.cyclomatic_sum(),

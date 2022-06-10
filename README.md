@@ -30,7 +30,7 @@ OPTIONS:
         --json <JSON_OUTPUT>           Path where to save the output of the json file
     -n, --n_threads <N_THREADS>        Number of threads to use for concurrency [default: 2]
     -p, --path_file <PATH_FILE>        Path to the project folder
-    -t, --thresholds <THRESHOLDS>      Set four  tresholds in this order: SIFIS PLAIN, SIFIS
+    -t, --thresholds <THRESHOLDS>      Set four  thresholds in this order: SIFIS PLAIN, SIFIS
                                        QUANTIZED, CRAP, SKUNK
                                        
                                            All the values must be floats
@@ -49,7 +49,7 @@ OPTIONS:
     -v, --verbose                      Output the generated paths as they are produced
     -V, --version                      Print version information
 
-Exemple:
+Example:
 
 ```
 weighted-code-coverage  --path_file /path/to/source/code --path_json /path/to/coveralls.json -c cyclomatic --json /path/to/output.json -f coveralls -t 35.0,1.5,35.0,30.0

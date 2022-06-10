@@ -1,8 +1,8 @@
 use rust_code_analysis::FuncSpace;
 use serde_json::Value;
 
+use crate::error::Error;
 use crate::utility::Complexity;
-use crate::utility::SifisError;
 
 const THRESHOLD: f64 = 15.;
 // This function find the minimum space for a line i in the file
@@ -28,7 +28,7 @@ pub(crate) fn sifis_plain(
     covs: &[Value],
     metric: Complexity,
     is_covdir: bool,
-) -> Result<(f64, f64), SifisError> {
+) -> Result<(f64, f64), Error> {
     let ploc = root.metrics.loc.ploc();
     let comp = match metric {
         Complexity::Cyclomatic => root.metrics.cyclomatic.cyclomatic_sum(),
@@ -36,17 +36,17 @@ pub(crate) fn sifis_plain(
     };
     let sum = covs
         .iter()
-        .try_fold(0., |acc, line| -> Result<f64, SifisError> {
+        .try_fold(0., |acc, line| -> Result<f64, Error> {
             // Check if the line is null
             let is_null = if is_covdir {
-                line.as_i64().ok_or(SifisError::ConversionError())? == -1
+                line.as_i64().ok_or(Error::ConversionError())? == -1
             } else {
                 line.is_null()
             };
             let sum;
             if !is_null {
                 // If the line is not null and is covered (cov>0) the add the complexity  to the sum
-                let cov = line.as_u64().ok_or(SifisError::ConversionError())?;
+                let cov = line.as_u64().ok_or(Error::ConversionError())?;
                 if cov > 0 {
                     sum = acc + comp;
                 } else {
@@ -68,24 +68,25 @@ pub(crate) fn sifis_quantized(
     covs: &[Value],
     metric: Complexity,
     is_covdir: bool,
-) -> Result<(f64, f64), SifisError> {
+) -> Result<(f64, f64), Error> {
     let ploc = root.metrics.loc.ploc();
     let sum =
+    //For each line find the minimum space and get complexity value then sum 1 if comp>threshold  else sum 1
         covs.iter()
             .enumerate()
-            .try_fold(0., |acc, (i, line)| -> Result<f64, SifisError> {
+            .try_fold(0., |acc, (i, line)| -> Result<f64, Error> {
                 // Check if the line is null
                 let is_null = if is_covdir {
-                    line.as_i64().ok_or(SifisError::ConversionError())? == -1
+                    line.as_i64().ok_or(Error::ConversionError())? == -1
                 } else {
                     line.is_null()
                 };
                 let sum;
                 if !is_null {
                     // Get line
-                    let cov = line.as_u64().ok_or(SifisError::ConversionError())?;
+                    let cov = line.as_u64().ok_or(Error::ConversionError())?;
                     if cov > 0 {
-                        // If the line is covered get the space of the line and then check if the complexity is below the theshold
+                        // If the line is covered get the space of the line and then check if the complexity is below the threshold
                         let min_space: FuncSpace = get_min_space(root, i);
                         let comp = match metric {
                             Complexity::Cyclomatic => min_space.metrics.cyclomatic.cyclomatic(),
@@ -104,40 +105,6 @@ pub(crate) fn sifis_quantized(
                 }
                 Ok(sum)
             })?;
-    //For each line find the minimun space and get complexity value then sum 1 if comp>threshold  else sum 1
-    /*for i in 0..covs.len() {
-        // Check if the line is null
-        let is_null = if is_covdir {
-            covs.get(i)
-                .ok_or(SifisError::ConversionError())?
-                .as_i64()
-                .ok_or(SifisError::ConversionError())?
-                == -1
-        } else {
-            covs.get(i).ok_or(SifisError::ConversionError())?.is_null()
-        };
-        if !is_null {
-            // Get line
-            let cov = covs
-                .get(i)
-                .ok_or(SifisError::ConversionError())?
-                .as_u64()
-                .ok_or(SifisError::ConversionError())?;
-            if cov > 0 {
-                // If the line is covered get the space of the line and then check if the complexity is below the theshold
-                let min_space: FuncSpace = get_min_space(root, i);
-                let comp = match metric {
-                    Complexity::Cyclomatic => min_space.metrics.cyclomatic.cyclomatic(),
-                    Complexity::Cognitive => min_space.metrics.cognitive.cognitive(),
-                };
-                if comp > THRESHOLD {
-                    sum += 2.;
-                } else {
-                    sum += 1.;
-                }
-            }
-        }
-    }*/
     Ok((sum / ploc, sum))
 }
 

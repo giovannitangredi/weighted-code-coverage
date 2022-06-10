@@ -3,13 +3,13 @@ use std::path::PathBuf;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
+use weighted_code_coverage::error::Error;
 use weighted_code_coverage::utility::Complexity;
 use weighted_code_coverage::utility::JsonFormat;
-use weighted_code_coverage::utility::SifisError;
 use weighted_code_coverage::*;
 
 const fn thresholds_long_help() -> &'static str {
-    "Set four  tresholds in this order: -t SIFIS_PLAIN, SIFIS_QUANTIZED, CRAP, SKUNK\n 
+    "Set four  thresholds in this order: -t SIFIS_PLAIN, SIFIS_QUANTIZED, CRAP, SKUNK\n 
     All the values must be floats\n
     All Thresholds has 0 as minimum value, thus no threshold at all.\n
     SIFIS PLAIN has a max threshold of COMP*SLOC/PLOC\n
@@ -66,7 +66,7 @@ struct Args {
     verbose: bool,
 }
 
-fn main() -> Result<(), SifisError> {
+fn main() -> Result<(), Error> {
     let args = Args::parse();
     let metric_to_use = args.complexity;
     let thresholds = args.thresholds.0;
