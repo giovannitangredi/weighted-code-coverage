@@ -4,14 +4,15 @@ use std::fs;
 use std::path::*;
 
 use arg_enum_proc_macro::ArgEnum;
-use rust_code_analysis::{get_function_spaces, guess_language, read_file, FuncSpace};
+use rust_code_analysis::{get_function_spaces, guess_language, read_file, FuncSpace, SpaceKind};
 use serde_json::Map;
 use serde_json::Value;
 use tracing::debug;
 
 use crate::error::*;
-use crate::Config;
-use crate::Metrics;
+use crate::files::Config;
+use crate::files::Metrics;
+use crate::functions::*;
 
 const COMPLEXITY_FACTOR: f64 = 25.0;
 
@@ -46,6 +47,23 @@ impl JsonFormat {
     /// Default output format.
     pub const fn default() -> &'static str {
         "coveralls"
+    }
+}
+
+/// Mode
+#[derive(ArgEnum, Copy, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Mode {
+    /// Cyclomatic metric.
+    #[arg_enum(name = "files")]
+    Files,
+    /// Cognitive metric.
+    #[arg_enum(name = "functions")]
+    Functions,
+}
+impl Mode {
+    /// Default output format.
+    pub const fn default() -> &'static str {
+        "files"
     }
 }
 
@@ -236,6 +254,34 @@ pub(crate) fn get_covered_lines(covs: &[Value]) -> Result<(f64, f64)> {
     Ok((covered_lines, tot_lines))
 }
 
+// Get the code coverage in percentage for a single function
+pub(crate) fn get_covered_lines_function(
+    covs: &[Value],
+    start: usize,
+    end: usize,
+) -> Result<(f64, f64)> {
+    // Count the number of covered lines
+    let (tot_lines, covered_lines) =
+        covs.iter()
+            .enumerate()
+            .try_fold((0., 0.), |acc, (i, line)| -> Result<(f64, f64)> {
+                let is_null = line.is_null();
+                let sum;
+                if !is_null && i >= start - 1 && i < end {
+                    let cov = line.as_u64().ok_or(Error::ConversionError())?;
+                    if cov > 0 {
+                        sum = (acc.0 + 1., acc.1 + 1.);
+                    } else {
+                        sum = (acc.0 + 1., acc.1);
+                    }
+                } else {
+                    sum = (acc.0, acc.1);
+                }
+                Ok(sum)
+            })?;
+    Ok((covered_lines, tot_lines))
+}
+
 // Get the root FuncSpace from a file
 pub(crate) fn get_root(path: &Path) -> Result<FuncSpace> {
     let data = read_file(path)?;
@@ -245,6 +291,22 @@ pub(crate) fn get_root(path: &Path) -> Result<FuncSpace> {
     debug!("{:?} is written in {:?}", path, lang);
     let root = get_function_spaces(&lang, data, path, None).ok_or(Error::MetricsError())?;
     Ok(root)
+}
+
+// Get all spaces stating from root.
+// It does not contain the root
+pub(crate) fn get_spaces(root: &FuncSpace) -> Result<Vec<&FuncSpace>> {
+    let mut stack = vec![root];
+    let mut result = Vec::<&FuncSpace>::new();
+    while let Some(space) = stack.pop() {
+        for s in &space.spaces {
+            stack.push(s);
+            if s.kind == SpaceKind::Function {
+                result.push(s);
+            }
+        }
+    }
+    Ok(result)
 }
 
 // Check complexity of a metric
@@ -300,6 +362,48 @@ pub(crate) fn get_cumulative_values(
     (avg, max, min, complex_files)
 }
 
+// Get AVG MIN MAx and the list of all complex files for functions mode
+pub(crate) fn get_cumulative_values_function(
+    metrics: &Vec<FunctionMetrics>,
+) -> (
+    FunctionMetrics,
+    FunctionMetrics,
+    FunctionMetrics,
+    Vec<FunctionMetrics>,
+) {
+    let mut avg = FunctionMetrics::avg();
+    let mut min = FunctionMetrics::min();
+    let mut max = FunctionMetrics::max();
+    let mut complex_files = Vec::<FunctionMetrics>::new();
+    let (sifis, sifisq, crap, skunk, cov) =
+        metrics.iter().fold((0.0, 0.0, 0.0, 0.0, 0.0), |acc, m| {
+            max.sifis_plain = max.sifis_plain.max(m.sifis_plain);
+            max.sifis_quantized = max.sifis_quantized.max(m.sifis_quantized);
+            max.crap = max.crap.max(m.crap);
+            max.skunk = max.skunk.max(m.skunk);
+            min.sifis_plain = min.sifis_plain.min(m.sifis_plain);
+            min.sifis_quantized = min.sifis_quantized.min(m.sifis_quantized);
+            min.crap = min.crap.min(m.crap);
+            min.skunk = min.skunk.min(m.skunk);
+            if m.is_complex {
+                complex_files.push(m.clone());
+            }
+            (
+                acc.0 + m.sifis_plain,
+                acc.1 + m.sifis_quantized,
+                acc.2 + m.crap,
+                acc.3 + m.skunk,
+                acc.4 + m.coverage,
+            )
+        });
+    avg.sifis_plain = sifis / metrics.len() as f64;
+    avg.crap = crap / metrics.len() as f64;
+    avg.skunk = skunk / metrics.len() as f64;
+    avg.sifis_quantized = sifisq / metrics.len() as f64;
+    avg.coverage = cov / metrics.len() as f64;
+    (avg, max, min, complex_files)
+}
+
 // Calculate SIFIS PLAIN , SIFIS QUANTIZED, CRA and SKUNKSCORE for the entire project
 // Using the sum values computed before
 pub(crate) fn get_project_metrics(project_coverage: f64, cfg: &Config) -> Result<Metrics> {
@@ -313,6 +417,27 @@ pub(crate) fn get_project_metrics(project_coverage: f64, cfg: &Config) -> Result
         crap: ((comp_sum.powf(2.)) * ((1.0 - project_coverage / 100.).powf(3.))) + comp_sum,
         skunk: (comp_sum / COMPLEXITY_FACTOR) * (100. - (project_coverage)),
         file: "PROJECT".to_string(),
+        file_path: "-".to_string(),
+        is_complex: false,
+        coverage: project_coverage,
+    })
+}
+
+// As get_project_metrics but for functions mode
+pub(crate) fn get_project_metrics_function(
+    project_coverage: f64,
+    cfg: &FunctionConfig,
+) -> Result<FunctionMetrics> {
+    let sifis_plain_sum = *cfg.sifis_plain_sum.lock()?;
+    let sifis_quantized_sum = *cfg.sifis_quantized_sum.lock()?;
+    let ploc_sum = *cfg.ploc_sum.lock()?;
+    let comp_sum = *cfg.comp_sum.lock()?;
+    Ok(FunctionMetrics {
+        sifis_plain: sifis_plain_sum / ploc_sum,
+        sifis_quantized: sifis_quantized_sum / ploc_sum,
+        crap: ((comp_sum.powf(2.)) * ((1.0 - project_coverage / 100.).powf(3.))) + comp_sum,
+        skunk: (comp_sum / COMPLEXITY_FACTOR) * (100. - (project_coverage)),
+        function_name: "PROJECT".to_string(),
         file_path: "-".to_string(),
         is_complex: false,
         coverage: project_coverage,

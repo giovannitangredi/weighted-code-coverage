@@ -2,8 +2,9 @@ use rust_code_analysis::FuncSpace;
 use serde_json::Value;
 
 use crate::error::*;
-use crate::utility::{get_coverage_perc, Complexity};
+use crate::utility::{get_coverage_perc, get_covered_lines_function, Complexity};
 
+const COMPLEXITY_FACTOR: f64 = 25.0;
 // Calculate the Skunkscore value  for the given file
 // https://www.fastruby.io/blog/code-quality/intruducing-skunk-stink-score-calculator.html
 // In this implementation the code smells are ignored.
@@ -14,7 +15,6 @@ pub(crate) fn skunk_nosmells(
     metric: Complexity,
     coverage: Option<f64>,
 ) -> Result<f64> {
-    let complexity_factor = 25.0;
     let comp = match metric {
         Complexity::Cyclomatic => root.metrics.cyclomatic.cyclomatic_sum(),
         Complexity::Cognitive => root.metrics.cognitive.cognitive_sum(),
@@ -25,9 +25,37 @@ pub(crate) fn skunk_nosmells(
         get_coverage_perc(covs)?
     };
     if cov == 100. {
-        Ok(comp / complexity_factor)
+        Ok(comp / COMPLEXITY_FACTOR)
     } else {
-        Ok((comp / complexity_factor) * (100. - (100. * cov)))
+        Ok((comp / COMPLEXITY_FACTOR) * (100. - (100. * cov)))
+    }
+}
+
+pub(crate) fn skunk_nosmells_function(
+    space: &FuncSpace,
+    covs: &[Value],
+    metric: Complexity,
+    coverage: Option<f64>,
+) -> Result<f64> {
+    let comp = match metric {
+        Complexity::Cyclomatic => space.metrics.cyclomatic.cyclomatic_sum(),
+        Complexity::Cognitive => space.metrics.cognitive.cognitive_sum(),
+    };
+    let cov = if let Some(coverage) = coverage {
+        coverage / 100.0
+    } else {
+        let (covered_lines, tot_lines) =
+            get_covered_lines_function(covs, space.start_line, space.end_line)?;
+        if tot_lines != 0. {
+            covered_lines / tot_lines
+        } else {
+            0.0
+        }
+    };
+    if cov == 100. {
+        Ok(comp / COMPLEXITY_FACTOR)
+    } else {
+        Ok((comp / COMPLEXITY_FACTOR) * (100. - (100. * cov)))
     }
 }
 
@@ -64,6 +92,28 @@ mod tests {
         let root = get_root(path).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let skunk_cogn = skunk_nosmells(&root, &vec, COGN, None).unwrap();
+        assert_eq!(skunk_cogn, 4.8);
+    }
+
+    #[test]
+    fn test_skunk_cyclomatic_function() {
+        let file = fs::read_to_string(JSON).unwrap();
+        let covs = read_json(file, PREFIX).unwrap();
+        let path = Path::new(FILE);
+        let root = get_root(path).unwrap();
+        let vec = covs.get(SIMPLE).unwrap().to_vec();
+        let skunk = skunk_nosmells_function(&root, &vec, COMP, None).unwrap();
+        assert_eq!(skunk, 6.4);
+    }
+
+    #[test]
+    fn test_skunk_cognitive_function() {
+        let file = fs::read_to_string(JSON).unwrap();
+        let covs = read_json(file, PREFIX).unwrap();
+        let path = Path::new(FILE);
+        let root = get_root(path).unwrap();
+        let vec = covs.get(SIMPLE).unwrap().to_vec();
+        let skunk_cogn = skunk_nosmells_function(&root, &vec, COGN, None).unwrap();
         assert_eq!(skunk_cogn, 4.8);
     }
 }
