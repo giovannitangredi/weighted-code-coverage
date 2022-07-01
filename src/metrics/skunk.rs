@@ -2,7 +2,7 @@ use rust_code_analysis::FuncSpace;
 use serde_json::Value;
 
 use crate::error::*;
-use crate::utility::{get_coverage_perc, get_covered_lines_function, Complexity};
+use crate::utility::{get_coverage_perc, get_covered_lines, Complexity};
 
 const COMPLEXITY_FACTOR: f64 = 25.0;
 // Calculate the Skunkscore value  for the given file
@@ -44,8 +44,7 @@ pub(crate) fn skunk_nosmells_function(
     let cov = if let Some(coverage) = coverage {
         coverage / 100.0
     } else {
-        let (covered_lines, tot_lines) =
-            get_covered_lines_function(covs, space.start_line, space.end_line)?;
+        let (covered_lines, tot_lines) = get_covered_lines(covs, space.start_line, space.end_line)?;
         if tot_lines != 0. {
             covered_lines / tot_lines
         } else {

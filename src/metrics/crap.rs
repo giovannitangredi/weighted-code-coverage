@@ -2,7 +2,7 @@ use rust_code_analysis::FuncSpace;
 use serde_json::Value;
 
 use crate::error::*;
-use crate::utility::{get_coverage_perc, get_covered_lines_function, Complexity};
+use crate::utility::{get_coverage_perc, get_covered_lines, Complexity};
 
 // Calculate the CRAP value  for the given file
 // (https://testing.googleblog.com/2011/02/this-code-is-crap.html#:~:text=CRAP%20is%20short%20for%20Change,partner%20in%20crime%20Bob%20Evans.)
@@ -39,8 +39,7 @@ pub(crate) fn crap_function(
     let cov = if let Some(coverage) = coverage {
         coverage / 100.0
     } else {
-        let (covered_lines, tot_lines) =
-            get_covered_lines_function(covs, space.start_line, space.end_line)?;
+        let (covered_lines, tot_lines) = get_covered_lines(covs, space.start_line, space.end_line)?;
         if tot_lines != 0. {
             covered_lines / tot_lines
         } else {

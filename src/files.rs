@@ -5,7 +5,7 @@ use std::path::*;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crossbeam::channel::{unbounded, Receiver};
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::debug;
@@ -17,83 +17,74 @@ use crate::metrics::skunk::skunk_nosmells;
 use crate::output::*;
 use crate::utility::*;
 
-#[derive(Clone, Default, Debug)]
-#[allow(dead_code)]
-pub struct MetricsConfig {
-    sifis_plain: f64,
-    sifis_quantized: f64,
-    crap: f64,
-    skunk: f64,
-    file: String,
-    file_path: String,
-    is_complex: bool,
-    coverage: f64,
+#[derive(Clone, Default, Debug, Serialize, Deserialize, Copy)]
+pub struct Metrics {
+    pub sifis_plain: f64,
+    pub sifis_quantized: f64,
+    pub crap: f64,
+    pub skunk: f64,
+    pub is_complex: bool,
+    pub coverage: f64,
+}
+impl Metrics {
+    pub fn new(
+        sifis_plain: f64,
+        sifis_quantized: f64,
+        crap: f64,
+        skunk: f64,
+        is_complex: bool,
+        coverage: f64,
+    ) -> Self {
+        Self {
+            sifis_plain,
+            sifis_quantized,
+            crap,
+            skunk,
+            is_complex,
+            coverage,
+        }
+    }
 }
 /// Struct with all the metrics computed for a single file
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
-pub struct Metrics {
-    pub(crate) sifis_plain: f64,
-    pub(crate) sifis_quantized: f64,
-    pub(crate) crap: f64,
-    pub(crate) skunk: f64,
-    pub(crate) file: String,
-    pub(crate) file_path: String,
-    pub(crate) is_complex: bool,
-    pub(crate) coverage: f64,
+pub struct FileMetrics {
+    pub metrics: Metrics,
+    pub file: String,
+    pub file_path: String,
 }
-impl Metrics {
-    pub fn new(mc: MetricsConfig) -> Self {
+impl FileMetrics {
+    pub fn new(metrics: Metrics, file: String, file_path: String) -> Self {
         Self {
-            sifis_plain: mc.sifis_plain,
-            sifis_quantized: mc.sifis_quantized,
-            crap: mc.crap,
-            skunk: mc.skunk,
-            file: mc.file,
-            file_path: mc.file_path,
-            is_complex: mc.is_complex,
-            coverage: mc.coverage,
+            metrics,
+            file,
+            file_path,
         }
     }
-    pub fn avg() -> Self {
+    pub fn avg(m: Metrics) -> Self {
         Self {
-            sifis_plain: 0.,
-            sifis_quantized: 0.,
-            crap: 0.,
-            skunk: 0.,
+            metrics: m,
             file: "AVG".to_string(),
             file_path: "-".to_string(),
-            is_complex: false,
-            coverage: 0.,
         }
     }
-    pub fn min() -> Self {
+    pub fn min(m: Metrics) -> Self {
         Self {
-            sifis_plain: 0.,
-            sifis_quantized: 0.,
-            crap: 0.,
-            skunk: 0.,
+            metrics: m,
             file: "MIN".to_string(),
             file_path: "-".to_string(),
-            is_complex: false,
-            coverage: 0.,
         }
     }
-    pub fn max() -> Self {
+    pub fn max(m: Metrics) -> Self {
         Self {
-            sifis_plain: 0.,
-            sifis_quantized: 0.,
-            crap: 0.,
-            skunk: 0.,
+            metrics: m,
             file: "MAX".to_string(),
             file_path: "-".to_string(),
-            is_complex: false,
-            coverage: 0.,
         }
     }
 }
 
-type Output = (Vec<Metrics>, Vec<String>, Vec<Metrics>, f64);
+type Output = (Vec<FileMetrics>, Vec<String>, Vec<FileMetrics>, f64);
 
 /// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
 /// It prints all the SIFIS, CRAP and SkunkScore values for all the files in the folders
@@ -101,9 +92,9 @@ type Output = (Vec<Metrics>, Vec<String>, Vec<Metrics>, f64);
 /// FILE       | SIFIS PLAIN | SIFIS QUANTIZED | CRAP       | SKUNKSCORE
 /// if the a file is not found in the json that files will be skipped
 pub fn get_metrics_output(
-    metrics: Vec<Metrics>,
+    metrics: Vec<FileMetrics>,
     files_ignored: Vec<String>,
-    complex_files: Vec<Metrics>,
+    complex_files: Vec<FileMetrics>,
 ) -> Result<()> {
     println!(
         "{0: <20} | {1: <20} | {2: <20} | {3: <20} | {4: <20} | {5: <20} | {6: <30}",
@@ -112,7 +103,13 @@ pub fn get_metrics_output(
     metrics.iter().for_each(|m| {
         println!(
             "{0: <20} | {1: <20.3} | {2: <20.3} | {3: <20.3} | {4: <20.3} | {5: <20} | {6: <30}",
-            m.file, m.sifis_plain, m.sifis_quantized, m.crap, m.skunk, m.is_complex, m.file_path
+            m.file,
+            m.metrics.sifis_plain,
+            m.metrics.sifis_quantized,
+            m.metrics.crap,
+            m.metrics.skunk,
+            m.metrics.is_complex,
+            m.file_path
         );
     });
     println!("FILES IGNORED: {}", files_ignored.len());
@@ -136,7 +133,7 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     let mut covered_lines = 0.;
     let mut tot_lines = 0.;
     let mut files_ignored: Vec<String> = Vec::<String>::new();
-    let mut res = Vec::<Metrics>::new();
+    let mut res = Vec::<FileMetrics>::new();
     let file = fs::read_to_string(json_path)?;
     let covs = read_json(
         file,
@@ -160,10 +157,10 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
                 continue;
             }
         };
-        let (_covered_lines, _tot_lines) = get_covered_lines(&arr)?;
+        let root = get_root(p)?;
+        let (_covered_lines, _tot_lines) = get_covered_lines(&arr, root.start_line, root.end_line)?;
         covered_lines += _covered_lines;
         tot_lines += _tot_lines;
-        let root = get_root(p)?;
         let (sifis_plain, _sum) = sifis_plain(&root, &arr, metric, false)?;
         let (sifis_quantized, _sum) = sifis_quantized(&root, &arr, metric, false)?;
         let crap = crap(&root, &arr, metric, None)?;
@@ -177,22 +174,30 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
         );
         let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk, thresholds);
         let coverage = get_coverage_perc(&arr)? * 100.;
-
-        res.push(Metrics::new(MetricsConfig {
+        let metrics = Metrics::new(
             sifis_plain,
             sifis_quantized,
             crap,
             skunk,
-            file,
-            file_path,
             is_complex,
-            coverage: f64::round(coverage * 100.0) / 100.0,
-        }));
+            f64::round(coverage * 100.0) / 100.0,
+        );
+        res.push(FileMetrics::new(metrics, file, file_path));
     }
-    let (avg, max, min, complex_files) = get_cumulative_values(&res);
-    res.push(avg);
-    res.push(max);
-    res.push(min);
+    let complex_files = res
+        .iter()
+        .filter(|m| m.metrics.is_complex)
+        .cloned()
+        .collect::<Vec<FileMetrics>>();
+    let m = res
+        .iter()
+        .map(|metric| metric.metrics)
+        .collect::<Vec<Metrics>>();
+    let (avg, max, min) = get_cumulative_values(&m);
+    res.push(FileMetrics::avg(avg));
+    res.push(FileMetrics::max(max));
+    res.push(FileMetrics::min(min));
+
     let project_coverage = covered_lines / tot_lines;
     Ok((res, files_ignored, complex_files, project_coverage))
 }
@@ -233,43 +238,64 @@ impl fmt::Debug for JobItem {
         )
     }
 }
+#[derive(Clone, Copy, Default)]
+pub(crate) struct JobComposer {
+    pub(crate) covered_lines: f64,
+    pub(crate) total_lines: f64,
+    pub(crate) sifis_plain_sum: f64,
+    pub(crate) sifis_quantized_sum: f64,
+    pub(crate) ploc_sum: f64,
+    pub(crate) comp_sum: f64,
+}
+pub(crate) type ComposerReceiver = Receiver<Option<JobComposer>>;
+pub(crate) type ComposerSender = Sender<Option<JobComposer>>;
+pub(crate) fn composer(receiver: ComposerReceiver) -> Result<JobComposer> {
+    let mut covered_lines = 0.0;
+    let mut total_lines = 0.0;
+    let mut sifis_plain_sum = 0.0;
+    let mut sifis_quantized_sum = 0.0;
+    let mut ploc_sum = 0.0;
+    let mut comp_sum = 0.0;
+    while let Ok(job) = receiver.recv() {
+        if job.is_none() {
+            break;
+        }
+        let job = job.unwrap();
+        covered_lines += job.covered_lines;
+        total_lines += job.total_lines;
+        sifis_plain_sum += job.sifis_plain_sum;
+        sifis_quantized_sum += job.sifis_quantized_sum;
+        ploc_sum += job.ploc_sum;
+        comp_sum += job.comp_sum;
+    }
+    Ok(JobComposer {
+        covered_lines,
+        total_lines,
+        sifis_plain_sum,
+        sifis_quantized_sum,
+        ploc_sum,
+        comp_sum,
+    })
+}
 
 // Configuration shared by all threads with all the data that must be returned
 #[derive(Clone, Default, Debug)]
 pub struct Config {
-    pub(crate) res: Arc<Mutex<Vec<Metrics>>>,
+    pub(crate) res: Arc<Mutex<Vec<FileMetrics>>>,
     pub(crate) files_ignored: Arc<Mutex<Vec<String>>>,
-    pub(crate) covered_lines: Arc<Mutex<f64>>,
-    pub(crate) total_lines: Arc<Mutex<f64>>,
-    pub(crate) sifis_plain_sum: Arc<Mutex<f64>>,
-    pub(crate) sifis_quantized_sum: Arc<Mutex<f64>>,
-    pub(crate) ploc_sum: Arc<Mutex<f64>>,
-    pub(crate) comp_sum: Arc<Mutex<f64>>,
 }
 
 impl Config {
     fn new() -> Self {
         Self {
-            res: Arc::new(Mutex::new(Vec::<Metrics>::new())),
+            res: Arc::new(Mutex::new(Vec::<FileMetrics>::new())),
             files_ignored: Arc::new(Mutex::new(Vec::<String>::new())),
-            sifis_plain_sum: Arc::new(Mutex::new(0.)),
-            sifis_quantized_sum: Arc::new(Mutex::new(0.)),
-            ploc_sum: Arc::new(Mutex::new(0.)),
-            comp_sum: Arc::new(Mutex::new(0.)),
-            covered_lines: Arc::new(Mutex::new(0.)),
-            total_lines: Arc::new(Mutex::new(0.)),
         }
     }
     fn clone(&self) -> Self {
         Self {
             res: Arc::clone(&self.res),
             files_ignored: Arc::clone(&self.files_ignored),
-            sifis_plain_sum: Arc::clone(&self.sifis_plain_sum),
-            sifis_quantized_sum: Arc::clone(&self.sifis_quantized_sum),
-            ploc_sum: Arc::clone(&self.ploc_sum),
-            comp_sum: Arc::clone(&self.comp_sum),
-            covered_lines: Arc::clone(&self.covered_lines),
-            total_lines: Arc::clone(&self.total_lines),
         }
     }
 }
@@ -277,16 +303,11 @@ impl Config {
 type JobReceiver = Receiver<Option<JobItem>>;
 
 // Consumer function run by ead independent thread
-fn consumer(receiver: JobReceiver, cfg: &Config) -> Result<()> {
+fn consumer(receiver: JobReceiver, sender_composer: ComposerSender, cfg: &Config) -> Result<()> {
     // Get all shared data
     let files_ignored = &cfg.files_ignored;
     let res = &cfg.res;
-    let all_cov_lines = &cfg.covered_lines;
-    let all_tot_lines = &cfg.total_lines;
-    let sifis_plain_sum = &cfg.sifis_plain_sum;
-    let sifis_quantized_sum = &cfg.sifis_quantized_sum;
-    let ploc_sum = &cfg.ploc_sum;
-    let comp_sum = &cfg.comp_sum;
+    let mut composer_output: JobComposer = JobComposer::default();
     while let Ok(job) = receiver.recv() {
         if job.is_none() {
             break;
@@ -317,12 +338,13 @@ fn consumer(receiver: JobReceiver, cfg: &Config) -> Result<()> {
                     continue;
                 }
             };
-            let (covered_lines, tot_lines) = get_covered_lines(&arr)?;
+            let root = get_root(path)?;
+            let (covered_lines, tot_lines) =
+                get_covered_lines(&arr, root.start_line, root.end_line)?;
             debug!(
                 "File: {:?} covered lines: {}  total lines: {}",
                 file, covered_lines, tot_lines
             );
-            let root = get_root(path)?;
             let ploc = root.metrics.loc.ploc();
             let comp = match metric {
                 Complexity::Cyclomatic => root.metrics.cyclomatic.cyclomatic_sum(),
@@ -338,29 +360,29 @@ fn consumer(receiver: JobReceiver, cfg: &Config) -> Result<()> {
             let coverage = get_coverage_perc(&arr)? * 100.;
             // Upgrade all the global variables and add metrics to the result and complex_files
             let mut res = res.lock()?;
-            let mut all_cov_lines = all_cov_lines.lock()?;
-            let mut all_tot_lines = all_tot_lines.lock()?;
-            let mut sifis_plain_sum = sifis_plain_sum.lock()?;
-            let mut sifis_quantized_sum = sifis_quantized_sum.lock()?;
-            let mut ploc_sum = ploc_sum.lock()?;
-            let mut comp_sum = comp_sum.lock()?;
-            *all_cov_lines += covered_lines;
-            *all_tot_lines += tot_lines;
-            *ploc_sum += ploc;
-            *sifis_plain_sum += sp_sum;
-            *sifis_quantized_sum += sq_sum;
-            *comp_sum += comp;
-            res.push(Metrics::new(MetricsConfig {
-                sifis_plain,
-                sifis_quantized,
-                crap,
-                skunk,
-                file: file_name,
+            composer_output.covered_lines += covered_lines;
+            composer_output.total_lines += tot_lines;
+            composer_output.ploc_sum += ploc;
+            composer_output.sifis_plain_sum += sp_sum;
+            composer_output.sifis_quantized_sum += sq_sum;
+            composer_output.comp_sum += comp;
+            res.push(FileMetrics::new(
+                Metrics::new(
+                    sifis_plain,
+                    sifis_quantized,
+                    crap,
+                    skunk,
+                    is_complex,
+                    f64::round(coverage * 100.0) / 100.0,
+                ),
+                file_name,
                 file_path,
-                is_complex,
-                coverage: f64::round(coverage * 100.0) / 100.0,
-            }));
+            ));
         }
+    }
+    if let Err(_e) = sender_composer.send(Some(composer_output)) {
+        println!("{}", _e);
+        return Err(Error::SenderError());
     }
     Ok(())
 }
@@ -403,15 +425,19 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     // Create a new vonfig with  all needed mutexes
     let cfg = Config::new();
     let (sender, receiver) = unbounded();
+    let (sender_composer, receiver_composer) = unbounded();
     // Chunks the files vector
     let chunks = chunk_vector(vec, n_threads);
     debug!("Files divided in {} chunks", chunks.len());
     debug!("Launching all {} threads", n_threads);
+    let composer =
+        { thread::spawn(move || -> Result<JobComposer> { composer(receiver_composer) }) };
     for _ in 0..n_threads {
+        let s = sender_composer.clone();
         let r = receiver.clone();
         let config = cfg.clone();
         // Launch n_threads consume threads
-        let h = thread::spawn(move || -> Result<()> { consumer(r, &config) });
+        let h = thread::spawn(move || -> Result<()> { consumer(r, s, &config) });
         handlers.push(h);
     }
     let prefix = files_path
@@ -450,20 +476,35 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     for handle in handlers {
         handle.join()??;
     }
+    if let Err(_e) = sender_composer.send(None) {
+        return Err(Error::SenderError());
+    }
     let mut files_ignored = cfg.files_ignored.lock()?;
     let mut res = cfg.res.lock()?;
-    let covered_lines = cfg.covered_lines.lock()?;
-    let tot_lines = cfg.total_lines.lock()?;
-    let project_coverage = *covered_lines / *tot_lines * 100.0;
-    let project_metric = get_project_metrics(project_coverage, &cfg)?;
+    let composer_output = composer.join()??;
+    let project_metric = FileMetrics::new(
+        get_project_metrics(composer_output, None)?,
+        "PROJECT".to_string(),
+        "-".to_string(),
+    );
+    let project_coverage = project_metric.metrics.coverage;
     files_ignored.sort();
     res.sort_by(|a, b| a.file.cmp(&b.file));
     // Get AVG MIN MAX and complex files
-    let (avg, max, min, complex_files) = get_cumulative_values(&res);
+    let complex_files = res
+        .iter()
+        .filter(|m| m.metrics.is_complex)
+        .cloned()
+        .collect::<Vec<FileMetrics>>();
+    let m = res
+        .iter()
+        .map(|metric| metric.metrics)
+        .collect::<Vec<Metrics>>();
+    let (avg, max, min) = get_cumulative_values(&m);
     res.push(project_metric);
-    res.push(avg);
-    res.push(max);
-    res.push(min);
+    res.push(FileMetrics::avg(avg));
+    res.push(FileMetrics::max(max));
+    res.push(FileMetrics::min(min));
     Ok((
         (*res).clone(),
         (*files_ignored).clone(),
@@ -511,14 +552,15 @@ impl fmt::Debug for JobItemCovDir {
 type JobReceiverCovDir = Receiver<Option<JobItemCovDir>>;
 
 // Consumer thread for the covdir format
-fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &Config) -> Result<()> {
+fn consumer_covdir(
+    receiver: JobReceiverCovDir,
+    sender_composer: ComposerSender,
+    cfg: &Config,
+) -> Result<()> {
     // Get all shared variables
     let files_ignored = &cfg.files_ignored;
     let res = &cfg.res;
-    let sifis_plain_sum = &cfg.sifis_plain_sum;
-    let sifis_quantized_sum = &cfg.sifis_quantized_sum;
-    let ploc_sum = &cfg.ploc_sum;
-    let comp_sum = &cfg.comp_sum;
+    let mut composer_output = JobComposer::default();
     while let Ok(job) = receiver.recv() {
         if job.is_none() {
             break;
@@ -565,27 +607,28 @@ fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &Config) -> Result<()> {
             let is_complex =
                 check_complexity(sifis_plain, sifis_quantized, crap, skunk, &thresholds);
             let mut res = res.lock()?;
-            let mut sifis_plain_sum = sifis_plain_sum.lock()?;
-            let mut sifis_quantized_sum = sifis_quantized_sum.lock()?;
-            let mut ploc_sum = ploc_sum.lock()?;
-            let mut comp_sum = comp_sum.lock()?;
             // Update all shared variables
-            *ploc_sum += ploc;
-            *sifis_plain_sum += sp_sum;
-            *sifis_quantized_sum += sq_sum;
-            *comp_sum += comp;
+            composer_output.ploc_sum += ploc;
+            composer_output.sifis_plain_sum += sp_sum;
+            composer_output.sifis_quantized_sum += sq_sum;
+            composer_output.comp_sum += comp;
             let coverage = covdir.coverage;
-            res.push(Metrics::new(MetricsConfig {
-                sifis_plain,
-                sifis_quantized,
-                crap,
-                skunk,
-                file: file_name,
+            res.push(FileMetrics::new(
+                Metrics::new(
+                    sifis_plain,
+                    sifis_quantized,
+                    crap,
+                    skunk,
+                    is_complex,
+                    f64::round(coverage * 100.0) / 100.0,
+                ),
+                file_name,
                 file_path,
-                is_complex,
-                coverage: f64::round(coverage * 100.0) / 100.0,
-            }));
+            ));
         }
+    }
+    if let Err(_e) = sender_composer.send(Some(composer_output)) {
+        return Err(Error::SenderError());
     }
     Ok(())
 }
@@ -619,15 +662,20 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     // Create a new Config all needed mutexes
     let cfg = Config::new();
     let (sender, receiver) = unbounded();
+    let (sender_composer, receiver_composer) = unbounded();
     // Chunks the files vector
     let chunks = chunk_vector(vec, n_threads);
     debug!("Files divided in {} chunks", chunks.len());
     debug!("Launching all {} threads", n_threads);
+    // Launch composer thread
+    let composer =
+        { thread::spawn(move || -> Result<JobComposer> { composer(receiver_composer) }) };
     // Launch n_threads consumer threads
     for _ in 0..n_threads {
         let r = receiver.clone();
+        let s = sender_composer.clone();
         let config = cfg.clone();
-        let h = thread::spawn(move || -> Result<()> { consumer_covdir(r, &config) });
+        let h = thread::spawn(move || -> Result<()> { consumer_covdir(r, s, &config) });
         handlers.push(h);
     }
     let prefix = files_path
@@ -663,6 +711,9 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     for handle in handlers {
         handle.join()??;
     }
+    if let Err(_e) = sender_composer.send(None) {
+        return Err(Error::SenderError());
+    }
     let mut files_ignored = cfg.files_ignored.lock()?;
     let mut res = cfg.res.lock()?;
     let project_coverage = covs
@@ -670,15 +721,29 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
         .ok_or(Error::HashMapError())?
         .coverage;
     // Get final  metrics for all the project
-    let project_metric = get_project_metrics(project_coverage, &cfg)?;
+    let composer_output = composer.join()??;
+    let project_metric = FileMetrics::new(
+        get_project_metrics(composer_output, Some(project_coverage))?,
+        "PROJECT".to_string(),
+        "-".to_string(),
+    );
     files_ignored.sort();
     res.sort_by(|a, b| a.file.cmp(&b.file));
     // Get AVG MIN MAX and complex files
-    let (avg, max, min, complex_files) = get_cumulative_values(&res);
+    let complex_files = res
+        .iter()
+        .filter(|m| m.metrics.is_complex)
+        .cloned()
+        .collect::<Vec<FileMetrics>>();
+    let m = res
+        .iter()
+        .map(|metric| metric.metrics)
+        .collect::<Vec<Metrics>>();
+    let (avg, max, min) = get_cumulative_values(&m);
     res.push(project_metric);
-    res.push(avg);
-    res.push(max);
-    res.push(min);
+    res.push(FileMetrics::avg(avg));
+    res.push(FileMetrics::max(max));
+    res.push(FileMetrics::min(min));
     Ok((
         (*res).clone(),
         (*files_ignored).clone(),
@@ -691,9 +756,9 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
 /// The structure is the following :
 /// "FILE","SIFIS PLAIN","SIFIS QUANTIZED","CRAP","SKUNK","IGNORED","IS COMPLEX","FILE PATH",
 pub fn print_metrics_to_csv<A: AsRef<Path> + Copy>(
-    metrics: Vec<Metrics>,
+    metrics: Vec<FileMetrics>,
     files_ignored: Vec<String>,
-    complex_files: Vec<Metrics>,
+    complex_files: Vec<FileMetrics>,
     csv_path: A,
     project_coverage: f64,
 ) -> Result<()> {
@@ -709,9 +774,9 @@ pub fn print_metrics_to_csv<A: AsRef<Path> + Copy>(
 
 /// Prints the the given  metrics ,files ignored and complex files  in a json format
 pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
-    metrics: Vec<Metrics>,
+    metrics: Vec<FileMetrics>,
     files_ignored: Vec<String>,
-    complex_files: Vec<Metrics>,
+    complex_files: Vec<FileMetrics>,
     json_output: A,
     project_folder: A,
     project_coverage: f64,
@@ -754,11 +819,11 @@ mod tests {
             &[30., 1.5, 35., 30.],
         )
         .unwrap();
-        let error = &metrics[3];
-        let ma = &metrics[7];
-        let h = &metrics[5];
-        let app = &metrics[0];
-        let cont = &metrics[2];
+        let error = &metrics[3].metrics;
+        let ma = &metrics[7].metrics;
+        let h = &metrics[5].metrics;
+        let app = &metrics[0].metrics;
+        let cont = &metrics[2].metrics;
 
         assert_eq!(files_ignored.len(), 1);
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
@@ -797,11 +862,11 @@ mod tests {
             &[30., 1.5, 35., 30.],
         )
         .unwrap();
-        let error = &metrics[3];
-        let ma = &metrics[7];
-        let h = &metrics[5];
-        let app = &metrics[0];
-        let cont = &metrics[2];
+        let error = &metrics[3].metrics;
+        let ma = &metrics[7].metrics;
+        let h = &metrics[5].metrics;
+        let app = &metrics[0].metrics;
+        let cont = &metrics[2].metrics;
 
         assert_eq!(files_ignored.len(), 1);
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
@@ -840,11 +905,11 @@ mod tests {
             &[30., 1.5, 35., 30.],
         )
         .unwrap();
-        let error = &metrics[3];
-        let ma = &metrics[7];
-        let h = &metrics[5];
-        let app = &metrics[0];
-        let cont = &metrics[2];
+        let error = &metrics[3].metrics;
+        let ma = &metrics[7].metrics;
+        let h = &metrics[5].metrics;
+        let app = &metrics[0].metrics;
+        let cont = &metrics[2].metrics;
 
         assert_eq!(files_ignored.len(), 1);
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
@@ -883,11 +948,11 @@ mod tests {
             &[30., 1.5, 35., 30.],
         )
         .unwrap();
-        let error = &metrics[3];
-        let ma = &metrics[7];
-        let h = &metrics[5];
-        let app = &metrics[0];
-        let cont = &metrics[2];
+        let error = &metrics[3].metrics;
+        let ma = &metrics[7].metrics;
+        let h = &metrics[5].metrics;
+        let app = &metrics[0].metrics;
+        let cont = &metrics[2].metrics;
         assert_eq!(files_ignored.len(), 1);
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
         assert!(compare_float(error.sifis_plain, 0.53125));

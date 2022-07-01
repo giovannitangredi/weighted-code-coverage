@@ -10,9 +10,8 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::error::*;
-use crate::files::Config;
+use crate::files::JobComposer;
 use crate::files::Metrics;
-use crate::functions::*;
 
 const COMPLEXITY_FACTOR: f64 = 25.0;
 
@@ -231,35 +230,8 @@ pub(crate) fn get_coverage_perc(covs: &[Value]) -> Result<f64> {
     Ok(covered_lines / tot_lines)
 }
 
-// Get the code coverage in percentage
-pub(crate) fn get_covered_lines(covs: &[Value]) -> Result<(f64, f64)> {
-    // Count the number of covered lines
-    let (tot_lines, covered_lines) =
-        covs.iter()
-            .try_fold((0., 0.), |acc, line| -> Result<(f64, f64)> {
-                let is_null = line.is_null();
-                let sum;
-                if !is_null {
-                    let cov = line.as_u64().ok_or(Error::ConversionError())?;
-                    if cov > 0 {
-                        sum = (acc.0 + 1., acc.1 + 1.);
-                    } else {
-                        sum = (acc.0 + 1., acc.1);
-                    }
-                } else {
-                    sum = (acc.0, acc.1);
-                }
-                Ok(sum)
-            })?;
-    Ok((covered_lines, tot_lines))
-}
-
-// Get the code coverage in percentage for a single function
-pub(crate) fn get_covered_lines_function(
-    covs: &[Value],
-    start: usize,
-    end: usize,
-) -> Result<(f64, f64)> {
+// Get the code coverage in percentage between start and end
+pub(crate) fn get_covered_lines(covs: &[Value], start: usize, end: usize) -> Result<(f64, f64)> {
     // Count the number of covered lines
     let (tot_lines, covered_lines) =
         covs.iter()
@@ -325,14 +297,10 @@ pub(crate) fn check_complexity(
         || skunk > thresholds[3]
 }
 
-// Get AVG MIN MAx and the list of all complex files
-pub(crate) fn get_cumulative_values(
-    metrics: &Vec<Metrics>,
-) -> (Metrics, Metrics, Metrics, Vec<Metrics>) {
-    let mut avg = Metrics::avg();
-    let mut min = Metrics::min();
-    let mut max = Metrics::max();
-    let mut complex_files = Vec::<Metrics>::new();
+// GET average, maximum and minimum given all the metrics
+pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics, Metrics) {
+    let mut min = Metrics::new(f64::MAX, f64::MAX, f64::MAX, f64::MAX, false, 100.0);
+    let mut max = Metrics::default();
     let (sifis, sifisq, crap, skunk, cov) =
         metrics.iter().fold((0.0, 0.0, 0.0, 0.0, 0.0), |acc, m| {
             max.sifis_plain = max.sifis_plain.max(m.sifis_plain);
@@ -343,9 +311,6 @@ pub(crate) fn get_cumulative_values(
             min.sifis_quantized = min.sifis_quantized.min(m.sifis_quantized);
             min.crap = min.crap.min(m.crap);
             min.skunk = min.skunk.min(m.skunk);
-            if m.is_complex {
-                complex_files.push(m.clone());
-            }
             (
                 acc.0 + m.sifis_plain,
                 acc.1 + m.sifis_quantized,
@@ -354,94 +319,34 @@ pub(crate) fn get_cumulative_values(
                 acc.4 + m.coverage,
             )
         });
-    avg.sifis_plain = sifis / metrics.len() as f64;
-    avg.crap = crap / metrics.len() as f64;
-    avg.skunk = skunk / metrics.len() as f64;
-    avg.sifis_quantized = sifisq / metrics.len() as f64;
-    avg.coverage = cov / metrics.len() as f64;
-    (avg, max, min, complex_files)
-}
-
-// Get AVG MIN MAx and the list of all complex files for functions mode
-pub(crate) fn get_cumulative_values_function(
-    metrics: &Vec<FunctionMetrics>,
-) -> (
-    FunctionMetrics,
-    FunctionMetrics,
-    FunctionMetrics,
-    Vec<FunctionMetrics>,
-) {
-    let mut avg = FunctionMetrics::avg();
-    let mut min = FunctionMetrics::min();
-    let mut max = FunctionMetrics::max();
-    let mut complex_files = Vec::<FunctionMetrics>::new();
-    let (sifis, sifisq, crap, skunk, cov) =
-        metrics.iter().fold((0.0, 0.0, 0.0, 0.0, 0.0), |acc, m| {
-            max.sifis_plain = max.sifis_plain.max(m.sifis_plain);
-            max.sifis_quantized = max.sifis_quantized.max(m.sifis_quantized);
-            max.crap = max.crap.max(m.crap);
-            max.skunk = max.skunk.max(m.skunk);
-            min.sifis_plain = min.sifis_plain.min(m.sifis_plain);
-            min.sifis_quantized = min.sifis_quantized.min(m.sifis_quantized);
-            min.crap = min.crap.min(m.crap);
-            min.skunk = min.skunk.min(m.skunk);
-            if m.is_complex {
-                complex_files.push(m.clone());
-            }
-            (
-                acc.0 + m.sifis_plain,
-                acc.1 + m.sifis_quantized,
-                acc.2 + m.crap,
-                acc.3 + m.skunk,
-                acc.4 + m.coverage,
-            )
-        });
-    avg.sifis_plain = sifis / metrics.len() as f64;
-    avg.crap = crap / metrics.len() as f64;
-    avg.skunk = skunk / metrics.len() as f64;
-    avg.sifis_quantized = sifisq / metrics.len() as f64;
-    avg.coverage = cov / metrics.len() as f64;
-    (avg, max, min, complex_files)
+    let l = metrics.len() as f64;
+    let avg = Metrics::new(sifis / l, sifisq / l, crap / l, skunk / l, false, cov);
+    (avg, max, min)
 }
 
 // Calculate SIFIS PLAIN , SIFIS QUANTIZED, CRA and SKUNKSCORE for the entire project
 // Using the sum values computed before
-pub(crate) fn get_project_metrics(project_coverage: f64, cfg: &Config) -> Result<Metrics> {
-    let sifis_plain_sum = *cfg.sifis_plain_sum.lock()?;
-    let sifis_quantized_sum = *cfg.sifis_quantized_sum.lock()?;
-    let ploc_sum = *cfg.ploc_sum.lock()?;
-    let comp_sum = *cfg.comp_sum.lock()?;
-    Ok(Metrics {
-        sifis_plain: sifis_plain_sum / ploc_sum,
-        sifis_quantized: sifis_quantized_sum / ploc_sum,
-        crap: ((comp_sum.powf(2.)) * ((1.0 - project_coverage / 100.).powf(3.))) + comp_sum,
-        skunk: (comp_sum / COMPLEXITY_FACTOR) * (100. - (project_coverage)),
-        file: "PROJECT".to_string(),
-        file_path: "-".to_string(),
+pub(crate) fn get_project_metrics(
+    values: JobComposer,
+    project_coverage: Option<f64>,
+) -> Result<Metrics> {
+    let project_coverage = if let Some(cov) = project_coverage {
+        cov
+    } else if values.total_lines != 0.0 {
+        (values.covered_lines / values.total_lines) * 100.0
+    } else {
+        0.0
+    };
+    let m = Metrics {
+        sifis_plain: values.sifis_plain_sum / values.ploc_sum,
+        sifis_quantized: values.sifis_quantized_sum / values.ploc_sum,
+        crap: ((values.comp_sum.powf(2.)) * ((1.0 - project_coverage / 100.).powf(3.)))
+            + values.comp_sum,
+        skunk: (values.comp_sum / COMPLEXITY_FACTOR) * (100. - (project_coverage)),
         is_complex: false,
         coverage: project_coverage,
-    })
-}
-
-// As get_project_metrics but for functions mode
-pub(crate) fn get_project_metrics_function(
-    project_coverage: f64,
-    cfg: &FunctionConfig,
-) -> Result<FunctionMetrics> {
-    let sifis_plain_sum = *cfg.sifis_plain_sum.lock()?;
-    let sifis_quantized_sum = *cfg.sifis_quantized_sum.lock()?;
-    let ploc_sum = *cfg.ploc_sum.lock()?;
-    let comp_sum = *cfg.comp_sum.lock()?;
-    Ok(FunctionMetrics {
-        sifis_plain: sifis_plain_sum / ploc_sum,
-        sifis_quantized: sifis_quantized_sum / ploc_sum,
-        crap: ((comp_sum.powf(2.)) * ((1.0 - project_coverage / 100.).powf(3.))) + comp_sum,
-        skunk: (comp_sum / COMPLEXITY_FACTOR) * (100. - (project_coverage)),
-        function_name: "PROJECT".to_string(),
-        file_path: "-".to_string(),
-        is_complex: false,
-        coverage: project_coverage,
-    })
+    };
+    Ok(m)
 }
 
 #[cfg(test)]

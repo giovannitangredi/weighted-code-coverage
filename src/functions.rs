@@ -11,6 +11,7 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::error::*;
+use crate::files::*;
 use crate::metrics::crap::{crap, crap_function};
 use crate::metrics::sifis::{
     sifis_plain, sifis_plain_function, sifis_quantized, sifis_quantized_function,
@@ -19,78 +20,57 @@ use crate::metrics::skunk::{skunk_nosmells, skunk_nosmells_function};
 use crate::output::*;
 use crate::utility::*;
 
-#[derive(Clone, Default, Debug)]
-#[allow(dead_code)]
-pub struct FunctionMetricsConfig {
-    sifis_plain: f64,
-    sifis_quantized: f64,
-    crap: f64,
-    skunk: f64,
-    function_name: String,
-    file_path: String,
-    is_complex: bool,
-    coverage: f64,
-}
 /// Struct with all the metrics computed for a single file
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct FunctionMetrics {
-    pub(crate) sifis_plain: f64,
-    pub(crate) sifis_quantized: f64,
-    pub(crate) crap: f64,
-    pub(crate) skunk: f64,
-    pub(crate) function_name: String,
-    pub(crate) file_path: String,
-    pub(crate) is_complex: bool,
-    pub(crate) coverage: f64,
+    pub metrics: Metrics,
+    pub function_name: String,
+    pub file_path: String,
+    pub start_line: usize,
+    pub end_line: usize,
 }
 impl FunctionMetrics {
-    pub fn new(fmc: FunctionMetricsConfig) -> Self {
+    pub fn new(
+        metrics: Metrics,
+        function_name: String,
+        file_path: String,
+        start_line: usize,
+        end_line: usize,
+    ) -> Self {
         Self {
-            sifis_plain: fmc.sifis_plain,
-            sifis_quantized: fmc.sifis_quantized,
-            crap: fmc.crap,
-            skunk: fmc.skunk,
-            function_name: fmc.function_name,
-            file_path: fmc.file_path,
-            is_complex: fmc.is_complex,
-            coverage: fmc.coverage,
+            metrics,
+            function_name,
+            file_path,
+            start_line,
+            end_line,
         }
     }
-    pub fn avg() -> Self {
+    pub fn avg(m: Metrics) -> Self {
         Self {
-            sifis_plain: 0.,
-            sifis_quantized: 0.,
-            crap: 0.,
-            skunk: 0.,
+            metrics: m,
             function_name: "AVG".to_string(),
             file_path: "-".to_string(),
-            is_complex: false,
-            coverage: 0.,
+            start_line: 0,
+            end_line: 0,
         }
     }
-    pub fn min() -> Self {
+    pub fn min(m: Metrics) -> Self {
         Self {
-            sifis_plain: 0.,
-            sifis_quantized: 0.,
-            crap: 0.,
-            skunk: 0.,
+            metrics: m,
             function_name: "MIN".to_string(),
             file_path: "-".to_string(),
-            is_complex: false,
-            coverage: 0.,
+            start_line: 0,
+            end_line: 0,
         }
     }
-    pub fn max() -> Self {
+    pub fn max(m: Metrics) -> Self {
         Self {
-            sifis_plain: 0.,
-            sifis_quantized: 0.,
-            crap: 0.,
-            skunk: 0.,
+            metrics: m,
             function_name: "MAX".to_string(),
             file_path: "-".to_string(),
-            is_complex: false,
-            coverage: 0.,
+            start_line: 0,
+            end_line: 0,
         }
     }
 }
@@ -139,12 +119,6 @@ impl fmt::Debug for JobItem {
 pub struct FunctionConfig {
     pub(crate) res: Arc<Mutex<Vec<FunctionMetrics>>>,
     pub(crate) files_ignored: Arc<Mutex<Vec<String>>>,
-    pub(crate) covered_lines: Arc<Mutex<f64>>,
-    pub(crate) total_lines: Arc<Mutex<f64>>,
-    pub(crate) sifis_plain_sum: Arc<Mutex<f64>>,
-    pub(crate) sifis_quantized_sum: Arc<Mutex<f64>>,
-    pub(crate) ploc_sum: Arc<Mutex<f64>>,
-    pub(crate) comp_sum: Arc<Mutex<f64>>,
 }
 
 impl FunctionConfig {
@@ -152,24 +126,12 @@ impl FunctionConfig {
         Self {
             res: Arc::new(Mutex::new(Vec::<FunctionMetrics>::new())),
             files_ignored: Arc::new(Mutex::new(Vec::<String>::new())),
-            sifis_plain_sum: Arc::new(Mutex::new(0.)),
-            sifis_quantized_sum: Arc::new(Mutex::new(0.)),
-            ploc_sum: Arc::new(Mutex::new(0.)),
-            comp_sum: Arc::new(Mutex::new(0.)),
-            covered_lines: Arc::new(Mutex::new(0.)),
-            total_lines: Arc::new(Mutex::new(0.)),
         }
     }
     fn clone(&self) -> Self {
         Self {
             res: Arc::clone(&self.res),
             files_ignored: Arc::clone(&self.files_ignored),
-            sifis_plain_sum: Arc::clone(&self.sifis_plain_sum),
-            sifis_quantized_sum: Arc::clone(&self.sifis_quantized_sum),
-            ploc_sum: Arc::clone(&self.ploc_sum),
-            comp_sum: Arc::clone(&self.comp_sum),
-            covered_lines: Arc::clone(&self.covered_lines),
-            total_lines: Arc::clone(&self.total_lines),
         }
     }
 }
@@ -177,16 +139,15 @@ impl FunctionConfig {
 type JobReceiver = Receiver<Option<JobItem>>;
 
 // Consumer function run by ead independent thread
-fn consumer(receiver: JobReceiver, cfg: &FunctionConfig) -> Result<()> {
+fn consumer(
+    receiver: JobReceiver,
+    sender_composer: ComposerSender,
+    cfg: &FunctionConfig,
+) -> Result<()> {
     // Get all shared data
     let files_ignored = &cfg.files_ignored;
     let res = &cfg.res;
-    let all_cov_lines = &cfg.covered_lines;
-    let all_tot_lines = &cfg.total_lines;
-    let sifis_plain_sum = &cfg.sifis_plain_sum;
-    let sifis_quantized_sum = &cfg.sifis_quantized_sum;
-    let ploc_sum = &cfg.ploc_sum;
-    let comp_sum = &cfg.comp_sum;
+    let mut composer_output: JobComposer = JobComposer::default();
     while let Ok(job) = receiver.recv() {
         if job.is_none() {
             break;
@@ -217,12 +178,13 @@ fn consumer(receiver: JobReceiver, cfg: &FunctionConfig) -> Result<()> {
                     continue;
                 }
             };
-            let (covered_lines, tot_lines) = get_covered_lines(&arr)?;
+            let root = get_root(path)?;
+            let (covered_lines, tot_lines) =
+                get_covered_lines(&arr, root.start_line, root.end_line)?;
             debug!(
                 "File: {:?} covered lines: {}  total lines: {}",
                 file, covered_lines, tot_lines
             );
-            let root = get_root(path)?;
             let spaces = get_spaces(&root)?;
             let ploc = root.metrics.loc.ploc();
             let comp = match metric {
@@ -245,23 +207,27 @@ fn consumer(receiver: JobReceiver, cfg: &FunctionConfig) -> Result<()> {
                 let is_complex =
                     check_complexity(sifis_plain, sifis_quantized, crap, skunk, &thresholds);
                 let (covered_lines, tot_lines) =
-                    get_covered_lines_function(&arr, space.start_line, space.end_line)?;
+                    get_covered_lines(&arr, space.start_line, space.end_line)?;
                 let coverage = if tot_lines != 0. {
                     (covered_lines / tot_lines) * 100.
                 } else {
                     0.0
                 };
                 let mut res = res.lock()?;
-                res.push(FunctionMetrics::new(FunctionMetricsConfig {
-                    sifis_plain,
-                    sifis_quantized,
-                    crap,
-                    skunk,
+                res.push(FunctionMetrics::new(
+                    Metrics::new(
+                        sifis_plain,
+                        sifis_quantized,
+                        crap,
+                        skunk,
+                        is_complex,
+                        f64::round(coverage * 100.0) / 100.0,
+                    ),
                     function_name,
                     file_path,
-                    is_complex,
-                    coverage: f64::round(coverage * 100.0) / 100.0,
-                }));
+                    space.start_line,
+                    space.end_line,
+                ));
                 Ok(())
             })?;
             let (sifis_plain, sp_sum) = sifis_plain(&root, &arr, metric, false)?;
@@ -274,29 +240,31 @@ fn consumer(receiver: JobReceiver, cfg: &FunctionConfig) -> Result<()> {
             let coverage = get_coverage_perc(&arr)? * 100.;
             // Upgrade all the global variables and add metrics to the result and complex_files
             let mut res = res.lock()?;
-            let mut all_cov_lines = all_cov_lines.lock()?;
-            let mut all_tot_lines = all_tot_lines.lock()?;
-            let mut sifis_plain_sum = sifis_plain_sum.lock()?;
-            let mut sifis_quantized_sum = sifis_quantized_sum.lock()?;
-            let mut ploc_sum = ploc_sum.lock()?;
-            let mut comp_sum = comp_sum.lock()?;
-            *all_cov_lines += covered_lines;
-            *all_tot_lines += tot_lines;
-            *ploc_sum += ploc;
-            *sifis_plain_sum += sp_sum;
-            *sifis_quantized_sum += sq_sum;
-            *comp_sum += comp;
-            res.push(FunctionMetrics::new(FunctionMetricsConfig {
-                sifis_plain,
-                sifis_quantized,
-                crap,
-                skunk,
-                function_name: format!("{} ({}, {})", file_name, root.start_line, root.end_line),
+            composer_output.covered_lines += covered_lines;
+            composer_output.total_lines += tot_lines;
+            composer_output.ploc_sum += ploc;
+            composer_output.sifis_plain_sum += sp_sum;
+            composer_output.sifis_quantized_sum += sq_sum;
+            composer_output.comp_sum += comp;
+            res.push(FunctionMetrics::new(
+                Metrics::new(
+                    sifis_plain,
+                    sifis_quantized,
+                    crap,
+                    skunk,
+                    is_complex,
+                    f64::round(coverage * 100.0) / 100.0,
+                ),
+                file_name,
                 file_path,
-                is_complex,
-                coverage: f64::round(coverage * 100.0) / 100.0,
-            }));
+                root.start_line,
+                root.end_line,
+            ));
         }
+    }
+    if let Err(_e) = sender_composer.send(Some(composer_output)) {
+        println!("{}", _e);
+        return Err(Error::SenderError());
     }
     Ok(())
 }
@@ -340,15 +308,19 @@ pub fn get_functions_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + 
     // Create a new vonfig with  all needed mutexes
     let cfg = FunctionConfig::new();
     let (sender, receiver) = unbounded();
+    let (sender_composer, receiver_composer) = unbounded();
     // Chunks the files vector
     let chunks = chunk_vector(vec, n_threads);
     debug!("Files divided in {} chunks", chunks.len());
     debug!("Launching all {} threads", n_threads);
+    let composer =
+        { thread::spawn(move || -> Result<JobComposer> { composer(receiver_composer) }) };
     for _ in 0..n_threads {
         let r = receiver.clone();
+        let s = sender_composer.clone();
         let config = cfg.clone();
         // Launch n_threads consume threads
-        let h = thread::spawn(move || -> Result<()> { consumer(r, &config) });
+        let h = thread::spawn(move || -> Result<()> { consumer(r, s, &config) });
         handlers.push(h);
     }
     let prefix = files_path
@@ -387,20 +359,37 @@ pub fn get_functions_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + 
     for handle in handlers {
         handle.join()??;
     }
+    if let Err(_e) = sender_composer.send(None) {
+        return Err(Error::SenderError());
+    }
     let mut files_ignored = cfg.files_ignored.lock()?;
     let mut res = cfg.res.lock()?;
-    let covered_lines = cfg.covered_lines.lock()?;
-    let tot_lines = cfg.total_lines.lock()?;
-    let project_coverage = *covered_lines / *tot_lines * 100.0;
-    let project_metric = get_project_metrics_function(project_coverage, &cfg)?;
+    let composer_output = composer.join()??;
+    let project_metric = FunctionMetrics::new(
+        get_project_metrics(composer_output, None)?,
+        "PROJECT".to_string(),
+        "-".to_string(),
+        0,
+        0,
+    );
+    let project_coverage = project_metric.metrics.coverage;
     files_ignored.sort();
     res.sort_by(|a, b| a.function_name.cmp(&b.function_name));
     // Get AVG MIN MAX and complex files
-    let (avg, max, min, complex_files) = get_cumulative_values_function(&res);
+    let complex_files = res
+        .iter()
+        .filter(|m| m.metrics.is_complex)
+        .cloned()
+        .collect::<Vec<FunctionMetrics>>();
+    let m = res
+        .iter()
+        .map(|metric| metric.metrics)
+        .collect::<Vec<Metrics>>();
+    let (avg, max, min) = get_cumulative_values(&m);
     res.push(project_metric);
-    res.push(avg);
-    res.push(max);
-    res.push(min);
+    res.push(FunctionMetrics::avg(avg));
+    res.push(FunctionMetrics::max(max));
+    res.push(FunctionMetrics::min(min));
     Ok((
         (*res).clone(),
         (*files_ignored).clone(),
@@ -448,14 +437,15 @@ impl fmt::Debug for JobItemCovDir {
 type JobReceiverCovDir = Receiver<Option<JobItemCovDir>>;
 
 // Consumer function run by ead independent thread
-fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &FunctionConfig) -> Result<()> {
+fn consumer_covdir(
+    receiver: JobReceiverCovDir,
+    sender_composer: ComposerSender,
+    cfg: &FunctionConfig,
+) -> Result<()> {
     // Get all shared data
     let files_ignored = &cfg.files_ignored;
     let res = &cfg.res;
-    let sifis_plain_sum = &cfg.sifis_plain_sum;
-    let sifis_quantized_sum = &cfg.sifis_quantized_sum;
-    let ploc_sum = &cfg.ploc_sum;
-    let comp_sum = &cfg.comp_sum;
+    let mut composer_output = JobComposer::default();
     while let Ok(job) = receiver.recv() {
         if job.is_none() {
             break;
@@ -512,16 +502,20 @@ fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &FunctionConfig) -> Result<
                     check_complexity(sifis_plain, sifis_quantized, crap, skunk, &thresholds);
                 let coverage = covdir.coverage;
                 let mut res = res.lock()?;
-                res.push(FunctionMetrics::new(FunctionMetricsConfig {
-                    sifis_plain,
-                    sifis_quantized,
-                    crap,
-                    skunk,
+                res.push(FunctionMetrics::new(
+                    Metrics::new(
+                        sifis_plain,
+                        sifis_quantized,
+                        crap,
+                        skunk,
+                        is_complex,
+                        f64::round(coverage * 100.0) / 100.0,
+                    ),
                     function_name,
                     file_path,
-                    is_complex,
-                    coverage: f64::round(coverage * 100.0) / 100.0,
-                }));
+                    space.start_line,
+                    space.end_line,
+                ));
                 Ok(())
             })?;
             let (sifis_plain, sp_sum) = sifis_plain(&root, arr, metric, true)?;
@@ -534,25 +528,29 @@ fn consumer_covdir(receiver: JobReceiverCovDir, cfg: &FunctionConfig) -> Result<
             let coverage = covdir.coverage;
             // Upgrade all the global variables and add metrics to the result and complex_files
             let mut res = res.lock()?;
-            let mut sifis_plain_sum = sifis_plain_sum.lock()?;
-            let mut sifis_quantized_sum = sifis_quantized_sum.lock()?;
-            let mut ploc_sum = ploc_sum.lock()?;
-            let mut comp_sum = comp_sum.lock()?;
-            *ploc_sum += ploc;
-            *sifis_plain_sum += sp_sum;
-            *sifis_quantized_sum += sq_sum;
-            *comp_sum += comp;
-            res.push(FunctionMetrics::new(FunctionMetricsConfig {
-                sifis_plain,
-                sifis_quantized,
-                crap,
-                skunk,
-                function_name: format!("{} ({}, {})", file_name, root.start_line, root.end_line),
+            composer_output.ploc_sum += ploc;
+            composer_output.sifis_plain_sum += sp_sum;
+            composer_output.sifis_quantized_sum += sq_sum;
+            composer_output.comp_sum += comp;
+            res.push(FunctionMetrics::new(
+                Metrics::new(
+                    sifis_plain,
+                    sifis_quantized,
+                    crap,
+                    skunk,
+                    is_complex,
+                    f64::round(coverage * 100.0) / 100.0,
+                ),
+                file_name,
                 file_path,
-                is_complex,
-                coverage: f64::round(coverage * 100.0) / 100.0,
-            }));
+                root.start_line,
+                root.end_line,
+            ));
         }
+    }
+    if let Err(_e) = sender_composer.send(Some(composer_output)) {
+        println!("{}", _e);
+        return Err(Error::SenderError());
     }
     Ok(())
 }
@@ -582,15 +580,19 @@ pub fn get_functions_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<P
     // Create a new config with  all needed mutexes
     let cfg = FunctionConfig::new();
     let (sender, receiver) = unbounded();
+    let (sender_composer, receiver_composer) = unbounded();
     // Chunks the files vector
     let chunks = chunk_vector(vec, n_threads);
     debug!("Files divided in {} chunks", chunks.len());
     debug!("Launching all {} threads", n_threads);
+    let composer =
+        { thread::spawn(move || -> Result<JobComposer> { composer(receiver_composer) }) };
     for _ in 0..n_threads {
         let r = receiver.clone();
+        let s = sender_composer.clone();
         let config = cfg.clone();
         // Launch n_threads consume threads
-        let h = thread::spawn(move || -> Result<()> { consumer_covdir(r, &config) });
+        let h = thread::spawn(move || -> Result<()> { consumer_covdir(r, s, &config) });
         handlers.push(h);
     }
     let prefix = files_path
@@ -629,21 +631,40 @@ pub fn get_functions_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<P
     for handle in handlers {
         handle.join()??;
     }
+    if let Err(_e) = sender_composer.send(None) {
+        return Err(Error::SenderError());
+    }
     let mut files_ignored = cfg.files_ignored.lock()?;
     let mut res = cfg.res.lock()?;
     let project_coverage = covs
         .get(&("PROJECT_ROOT".to_string()))
         .ok_or(Error::HashMapError())?
         .coverage;
-    let project_metric = get_project_metrics_function(project_coverage, &cfg)?;
+    let composer_output = composer.join()??;
+    let project_metric = FunctionMetrics::new(
+        get_project_metrics(composer_output, Some(project_coverage))?,
+        "PROJECT".to_string(),
+        "-".to_string(),
+        0,
+        0,
+    );
     files_ignored.sort();
     res.sort_by(|a, b| a.function_name.cmp(&b.function_name));
     // Get AVG MIN MAX and complex files
-    let (avg, max, min, complex_files) = get_cumulative_values_function(&res);
+    let complex_files: Vec<FunctionMetrics> = res
+        .iter()
+        .filter(|m| m.metrics.is_complex)
+        .cloned()
+        .collect::<Vec<FunctionMetrics>>();
+    let m = res
+        .iter()
+        .map(|metric| metric.metrics)
+        .collect::<Vec<Metrics>>();
+    let (avg, max, min) = get_cumulative_values(&m);
     res.push(project_metric);
-    res.push(avg);
-    res.push(max);
-    res.push(min);
+    res.push(FunctionMetrics::avg(avg));
+    res.push(FunctionMetrics::max(max));
+    res.push(FunctionMetrics::min(min));
     Ok((
         (*res).clone(),
         (*files_ignored).clone(),
@@ -671,11 +692,11 @@ pub fn get_metrics_output_function(
         println!(
             "{0: <20} | {1: <20.3} | {2: <20.3} | {3: <20.3} | {4: <20.3} | {5: <20} | {6: <30}",
             m.function_name,
-            m.sifis_plain,
-            m.sifis_quantized,
-            m.crap,
-            m.skunk,
-            m.is_complex,
+            m.metrics.sifis_plain,
+            m.metrics.sifis_quantized,
+            m.metrics.crap,
+            m.metrics.skunk,
+            m.metrics.is_complex,
             m.file_path
         );
     });
@@ -751,12 +772,12 @@ mod tests {
             &[30., 1.5, 35., 30.],
         )
         .unwrap();
-        let ma = &metrics[82];
-        let h = &metrics[79];
-        let app_root = &metrics[0];
-        let app_app_new_only_test = &metrics[15];
-        let cont_root = &metrics[48];
-        let cont_bool_flag = &metrics[51];
+        let ma = &metrics[82].metrics;
+        let h = &metrics[79].metrics;
+        let app_root = &metrics[0].metrics;
+        let app_app_new_only_test = &metrics[15].metrics;
+        let cont_root = &metrics[48].metrics;
+        let cont_bool_flag = &metrics[51].metrics;
 
         assert_eq!(files_ignored.len(), 1);
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
@@ -802,12 +823,12 @@ mod tests {
             &[30., 1.5, 35., 30.],
         )
         .unwrap();
-        let ma = &metrics[82];
-        let h = &metrics[79];
-        let app_root = &metrics[0];
-        let app_app_new_only_test = &metrics[15];
-        let cont_root = &metrics[48];
-        let cont_bool_flag = &metrics[51];
+        let ma = &metrics[82].metrics;
+        let h = &metrics[79].metrics;
+        let app_root = &metrics[0].metrics;
+        let app_app_new_only_test = &metrics[15].metrics;
+        let cont_root = &metrics[48].metrics;
+        let cont_bool_flag = &metrics[51].metrics;
 
         assert_eq!(files_ignored.len(), 1);
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
@@ -853,12 +874,12 @@ mod tests {
             &[30., 1.5, 35., 30.],
         )
         .unwrap();
-        let ma = &metrics[82];
-        let h = &metrics[79];
-        let app_root = &metrics[0];
-        let app_app_new_only_test = &metrics[15];
-        let cont_root = &metrics[48];
-        let cont_bool_flag = &metrics[51];
+        let ma = &metrics[82].metrics;
+        let h = &metrics[79].metrics;
+        let app_root = &metrics[0].metrics;
+        let app_app_new_only_test = &metrics[15].metrics;
+        let cont_root = &metrics[48].metrics;
+        let cont_bool_flag = &metrics[51].metrics;
 
         assert_eq!(files_ignored.len(), 1);
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
@@ -904,12 +925,12 @@ mod tests {
             &[30., 1.5, 35., 30.],
         )
         .unwrap();
-        let ma = &metrics[82];
-        let h = &metrics[79];
-        let app_root = &metrics[0];
-        let app_app_new_only_test = &metrics[15];
-        let cont_root = &metrics[48];
-        let cont_bool_flag = &metrics[51];
+        let ma = &metrics[82].metrics;
+        let h = &metrics[79].metrics;
+        let app_root = &metrics[0].metrics;
+        let app_app_new_only_test = &metrics[15].metrics;
+        let cont_root = &metrics[48].metrics;
+        let cont_bool_flag = &metrics[51].metrics;
 
         assert_eq!(files_ignored.len(), 1);
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());

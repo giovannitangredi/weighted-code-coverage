@@ -5,15 +5,15 @@ use csv;
 use serde_json::json;
 
 use crate::error::*;
-use crate::files::Metrics;
+use crate::files::FileMetrics;
 use crate::functions::FunctionMetrics;
 
 // Export metrics on a csv in the specified path
 pub(crate) fn export_to_csv(
     csv_path: &Path,
-    metrics: Vec<Metrics>,
+    metrics: Vec<FileMetrics>,
     files_ignored: Vec<String>,
-    complex_files: Vec<Metrics>,
+    complex_files: Vec<FileMetrics>,
     project_coverage: f64,
 ) -> Result<()> {
     let mut writer = csv::Writer::from_path(csv_path)?;
@@ -30,12 +30,12 @@ pub(crate) fn export_to_csv(
     metrics.iter().try_for_each(|m| -> Result<()> {
         writer.write_record(&[
             &m.file,
-            &format!("{:.3}", m.sifis_plain),
-            &format!("{:.3}", m.sifis_quantized),
-            &format!("{:.3}", m.crap),
-            &format!("{:.3}", m.skunk),
+            &format!("{:.3}", m.metrics.sifis_plain),
+            &format!("{:.3}", m.metrics.sifis_quantized),
+            &format!("{:.3}", m.metrics.crap),
+            &format!("{:.3}", m.metrics.skunk),
             &format!("{}", false),
-            &format!("{}", m.is_complex),
+            &format!("{}", m.metrics.is_complex),
             &m.file_path,
         ])?;
         Ok(())
@@ -63,12 +63,12 @@ pub(crate) fn export_to_csv(
     complex_files.iter().try_for_each(|m| -> Result<()> {
         writer.write_record(&[
             &m.file,
-            &format!("{:.3}", m.sifis_plain),
-            &format!("{:.3}", m.sifis_quantized),
-            &format!("{:.3}", m.crap),
-            &format!("{:.3}", m.skunk),
+            &format!("{:.3}", m.metrics.sifis_plain),
+            &format!("{:.3}", m.metrics.sifis_quantized),
+            &format!("{:.3}", m.metrics.crap),
+            &format!("{:.3}", m.metrics.skunk),
             &format!("{}", false),
-            &format!("{}", m.is_complex),
+            &format!("{}", m.metrics.is_complex),
             &m.file_path,
         ])?;
         Ok(())
@@ -124,9 +124,9 @@ pub(crate) fn export_to_csv(
 pub(crate) fn export_to_json(
     project_folder: &Path,
     output_path: &Path,
-    metrics: Vec<Metrics>,
+    metrics: Vec<FileMetrics>,
     files_ignored: Vec<String>,
-    complex_files: Vec<Metrics>,
+    complex_files: Vec<FileMetrics>,
     project_coverage: f64,
 ) -> Result<()> {
     let n_files = files_ignored.len();
@@ -167,12 +167,12 @@ pub(crate) fn export_to_csv_function(
     metrics.iter().try_for_each(|m| -> Result<()> {
         writer.write_record(&[
             &m.function_name,
-            &format!("{:.3}", m.sifis_plain),
-            &format!("{:.3}", m.sifis_quantized),
-            &format!("{:.3}", m.crap),
-            &format!("{:.3}", m.skunk),
+            &format!("{:.3}", m.metrics.sifis_plain),
+            &format!("{:.3}", m.metrics.sifis_quantized),
+            &format!("{:.3}", m.metrics.crap),
+            &format!("{:.3}", m.metrics.skunk),
             &format!("{}", false),
-            &format!("{}", m.is_complex),
+            &format!("{}", m.metrics.is_complex),
             &m.file_path,
         ])?;
         Ok(())
@@ -200,12 +200,12 @@ pub(crate) fn export_to_csv_function(
     complex_functions.iter().try_for_each(|m| -> Result<()> {
         writer.write_record(&[
             &m.function_name,
-            &format!("{:.3}", m.sifis_plain),
-            &format!("{:.3}", m.sifis_quantized),
-            &format!("{:.3}", m.crap),
-            &format!("{:.3}", m.skunk),
+            &format!("{:.3}", m.metrics.sifis_plain),
+            &format!("{:.3}", m.metrics.sifis_quantized),
+            &format!("{:.3}", m.metrics.crap),
+            &format!("{:.3}", m.metrics.skunk),
             &format!("{}", false),
-            &format!("{}", m.is_complex),
+            &format!("{}", m.metrics.is_complex),
             &m.file_path,
         ])?;
         Ok(())
