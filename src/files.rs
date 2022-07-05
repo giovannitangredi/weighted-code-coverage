@@ -1009,7 +1009,9 @@ mod tests {
         )
         .unwrap();
         let to_compare = fs::read_to_string("./data/test_project/to_compare.csv").unwrap();
-        let expected = fs::read_to_string("./data/test_project/test.csv").unwrap();
+        let expected = fs::read_to_string("./data/test_project/test.csv")
+            .unwrap()
+            .replace('\r', "");
         assert!(to_compare == expected);
         fs::remove_file("./data/test_project/to_compare.csv").unwrap();
     }
