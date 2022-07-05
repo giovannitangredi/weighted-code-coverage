@@ -20,17 +20,21 @@ pub(crate) fn skunk_nosmells(
         Complexity::Cognitive => root.metrics.cognitive.cognitive_sum(),
     };
     let cov = if let Some(coverage) = coverage {
-        coverage / 100.0
+        coverage
     } else {
-        get_coverage_perc(covs)?
+        get_coverage_perc(covs)? * 100.
     };
     if cov == 100. {
         Ok(comp / COMPLEXITY_FACTOR)
     } else {
-        Ok((comp / COMPLEXITY_FACTOR) * (100. - (100. * cov)))
+        Ok((comp / COMPLEXITY_FACTOR) * (100. - (cov)))
     }
 }
 
+// Calculate the Skunkscore value for a function
+// https://www.fastruby.io/blog/code-quality/intruducing-skunk-stink-score-calculator.html
+// In this implementation the code smells are ignored.
+// Return the value in case of success and an specif error in case of fails
 pub(crate) fn skunk_nosmells_function(
     space: &FuncSpace,
     covs: &[Value],

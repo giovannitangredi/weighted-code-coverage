@@ -25,6 +25,9 @@ pub(crate) fn crap(
     Ok(((comp.powf(2.)) * ((1.0 - cov).powf(3.))) + comp)
 }
 
+// Calculate the CRAP value  for the a function
+// (https://testing.googleblog.com/2011/02/this-code-is-crap.html#:~:text=CRAP%20is%20short%20for%20Change,partner%20in%20crime%20Bob%20Evans.)
+// Return the value in case of success and an specif error in case of fails
 pub(crate) fn crap_function(
     space: &FuncSpace,
     covs: &[Value],

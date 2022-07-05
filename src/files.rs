@@ -17,6 +17,7 @@ use crate::metrics::skunk::skunk_nosmells;
 use crate::output::*;
 use crate::utility::*;
 
+/// Struct containing all the metrics
 #[derive(Clone, Default, Debug, Serialize, Deserialize, Copy)]
 pub struct Metrics {
     pub sifis_plain: f64,
@@ -26,6 +27,7 @@ pub struct Metrics {
     pub is_complex: bool,
     pub coverage: f64,
 }
+
 impl Metrics {
     pub fn new(
         sifis_plain: f64,
@@ -45,6 +47,7 @@ impl Metrics {
         }
     }
 }
+
 /// Struct with all the metrics computed for a single file
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
@@ -53,6 +56,7 @@ pub struct FileMetrics {
     pub file: String,
     pub file_path: String,
 }
+
 impl FileMetrics {
     pub fn new(metrics: Metrics, file: String, file_path: String) -> Self {
         Self {
@@ -61,6 +65,7 @@ impl FileMetrics {
             file_path,
         }
     }
+
     pub fn avg(m: Metrics) -> Self {
         Self {
             metrics: m,
@@ -68,6 +73,7 @@ impl FileMetrics {
             file_path: "-".to_string(),
         }
     }
+
     pub fn min(m: Metrics) -> Self {
         Self {
             metrics: m,
@@ -75,6 +81,7 @@ impl FileMetrics {
             file_path: "-".to_string(),
         }
     }
+
     pub fn max(m: Metrics) -> Self {
         Self {
             metrics: m,
@@ -89,7 +96,7 @@ type Output = (Vec<FileMetrics>, Vec<String>, Vec<FileMetrics>, f64);
 /// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
 /// It prints all the SIFIS, CRAP and SkunkScore values for all the files in the folders
 /// the output will be print as follows:
-/// FILE       | SIFIS PLAIN | SIFIS QUANTIZED | CRAP       | SKUNKSCORE
+/// FILE       | SIFIS PLAIN | SIFIS QUANTIZED | CRAP       | SKUNKSCORE | "IS_COMPLEX" | "PATH"
 /// if the a file is not found in the json that files will be skipped
 pub fn get_metrics_output(
     metrics: Vec<FileMetrics>,
@@ -98,7 +105,7 @@ pub fn get_metrics_output(
 ) -> Result<()> {
     println!(
         "{0: <20} | {1: <20} | {2: <20} | {3: <20} | {4: <20} | {5: <20} | {6: <30}",
-        "FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNKSCORE", "IS_COMPLEX", "FILE PATH"
+        "FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNKSCORE", "IS_COMPLEX", "PATH"
     );
     metrics.iter().for_each(|m| {
         println!(
@@ -202,7 +209,7 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     Ok((res, files_ignored, complex_files, project_coverage))
 }
 
-// job received by the consumer threads
+// Job received by the consumer threads
 #[derive(Clone)]
 struct JobItem {
     chunk: Vec<String>,
@@ -238,6 +245,7 @@ impl fmt::Debug for JobItem {
         )
     }
 }
+
 #[derive(Clone, Copy, Default)]
 pub(crate) struct JobComposer {
     pub(crate) covered_lines: f64,
@@ -249,6 +257,7 @@ pub(crate) struct JobComposer {
 }
 pub(crate) type ComposerReceiver = Receiver<Option<JobComposer>>;
 pub(crate) type ComposerSender = Sender<Option<JobComposer>>;
+
 pub(crate) fn composer(receiver: ComposerReceiver) -> Result<JobComposer> {
     let mut covered_lines = 0.0;
     let mut total_lines = 0.0;
@@ -386,6 +395,7 @@ fn consumer(receiver: JobReceiver, sender_composer: ComposerSender, cfg: &Config
     }
     Ok(())
 }
+
 // Chunks the vector of files in multiple chunk to be used by threads
 // It will return number of chunk with the same number of elements usually equal
 // Or very close to n_threads
@@ -796,6 +806,7 @@ pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
 mod tests {
 
     use super::*;
+    use core::cmp::Ordering;
     const JSON: &str = "./data/seahorse/seahorse.json";
     const COVDIR: &str = "./data/seahorse/covdir.json";
     const PROJECT: &str = "./data/seahorse/";
@@ -803,7 +814,7 @@ mod tests {
 
     #[inline(always)]
     fn compare_float(a: f64, b: f64) -> bool {
-        a - b < 1.0e-5
+        a.total_cmp(&b) == Ordering::Equal
     }
 
     #[test]
@@ -829,8 +840,8 @@ mod tests {
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
         assert!(compare_float(error.sifis_plain, 0.53125));
         assert!(compare_float(error.sifis_quantized, 0.03125));
-        assert!(compare_float(error.crap, 257.9411765));
-        assert!(compare_float(error.skunk, 64.));
+        assert!(compare_float(error.crap, 257.94117647058823));
+        assert!(compare_float(error.skunk, 64.00000000000001));
         assert!(compare_float(ma.sifis_plain, 0.));
         assert!(compare_float(ma.sifis_quantized, 0.));
         assert!(compare_float(ma.crap, 552.));
@@ -839,14 +850,14 @@ mod tests {
         assert!(compare_float(h.sifis_quantized, 0.5));
         assert!(compare_float(h.crap, 3.));
         assert!(compare_float(h.skunk, 0.12));
-        assert!(compare_float(app.sifis_plain, 79.2147806));
-        assert!(compare_float(app.sifis_quantized, 0.792147806));
-        assert!(compare_float(app.crap, 123.974085565377));
-        assert!(compare_float(app.skunk, 53.53535354));
-        assert!(compare_float(cont.sifis_plain, 24.31578947));
-        assert!(compare_float(cont.sifis_quantized, 0.7368421053));
-        assert!(compare_float(cont.crap, 33.46814484));
-        assert!(compare_float(cont.skunk, 9.962264151));
+        assert!(compare_float(app.sifis_plain, 79.21478060046189));
+        assert!(compare_float(app.sifis_quantized, 0.792147806004619));
+        assert!(compare_float(app.crap, 123.97408556537728));
+        assert!(compare_float(app.skunk, 53.53535353535352));
+        assert!(compare_float(cont.sifis_plain, 24.31578947368421));
+        assert!(compare_float(cont.sifis_quantized, 0.7368421052631579));
+        assert!(compare_float(cont.crap, 33.468144844401756));
+        assert!(compare_float(cont.skunk, 9.9622641509434));
     }
 
     #[test]
@@ -870,26 +881,26 @@ mod tests {
 
         assert_eq!(files_ignored.len(), 1);
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
-        assert!(compare_float(error.sifis_plain, 0.53125));
+        assert!(compare_float(error.sifis_plain, 0.0625));
         assert!(compare_float(error.sifis_quantized, 0.03125));
-        assert!(compare_float(error.crap, 257.9411765));
-        assert!(compare_float(error.skunk, 64.));
+        assert!(compare_float(error.crap, 5.334825971911256));
+        assert!(compare_float(error.skunk, 7.529411764705883));
         assert!(compare_float(ma.sifis_plain, 0.));
         assert!(compare_float(ma.sifis_quantized, 0.));
         assert!(compare_float(ma.crap, 72.));
         assert!(compare_float(ma.skunk, 32.));
-        assert!(compare_float(h.sifis_plain, 1.5));
+        assert!(compare_float(h.sifis_plain, 0.));
         assert!(compare_float(h.sifis_quantized, 0.5));
-        assert!(compare_float(h.crap, 3.));
-        assert!(compare_float(h.skunk, 0.12));
-        assert!(compare_float(app.sifis_plain, 66.5404157));
-        assert!(compare_float(app.sifis_quantized, 0.792147806));
-        assert!(compare_float(app.crap, 100.9161148));
-        assert!(compare_float(app.skunk, 44.97));
-        assert!(compare_float(cont.sifis_plain, 18.42105263));
-        assert!(compare_float(cont.sifis_quantized, 0.88721804511));
-        assert!(compare_float(cont.crap, 25.26867817));
-        assert!(compare_float(cont.skunk, 7.547169811));
+        assert!(compare_float(h.crap, 0.));
+        assert!(compare_float(h.skunk, 0.));
+        assert!(compare_float(app.sifis_plain, 66.540415704388));
+        assert!(compare_float(app.sifis_quantized, 0.792147806004619));
+        assert!(compare_float(app.crap, 100.91611477493021));
+        assert!(compare_float(app.skunk, 44.969696969696955));
+        assert!(compare_float(cont.sifis_plain, 18.42105263157895));
+        assert!(compare_float(cont.sifis_quantized, 0.8872180451127819));
+        assert!(compare_float(cont.crap, 25.268678170570336));
+        assert!(compare_float(cont.skunk, 7.547169811320757));
     }
 
     #[test]
@@ -915,8 +926,8 @@ mod tests {
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
         assert!(compare_float(error.sifis_plain, 0.53125));
         assert!(compare_float(error.sifis_quantized, 0.03125));
-        assert!(compare_float(error.crap, 257.9592475));
-        assert!(compare_float(error.skunk, 64.0016));
+        assert!(compare_float(error.crap, 257.95924751059204));
+        assert!(compare_float(error.skunk, 64.00160000000001));
         assert!(compare_float(ma.sifis_plain, 0.));
         assert!(compare_float(ma.sifis_quantized, 0.));
         assert!(compare_float(ma.crap, 552.));
@@ -925,14 +936,14 @@ mod tests {
         assert!(compare_float(h.sifis_quantized, 0.5));
         assert!(compare_float(h.crap, 3.));
         assert!(compare_float(h.skunk, 0.12));
-        assert!(compare_float(app.sifis_plain, 79.2147806));
-        assert!(compare_float(app.sifis_quantized, 0.792147806));
-        assert!(compare_float(app.crap, 123.974085565377));
-        assert!(compare_float(app.skunk, 53.53535354));
-        assert!(compare_float(cont.sifis_plain, 24.31578947));
-        assert!(compare_float(cont.sifis_quantized, 0.7368421053));
-        assert!(compare_float(cont.crap, 33.46867171));
-        assert!(compare_float(cont.skunk, 9.96599999));
+        assert!(compare_float(app.sifis_plain, 79.21478060046189));
+        assert!(compare_float(app.sifis_quantized, 0.792147806004619));
+        assert!(compare_float(app.crap, 123.95346471999996));
+        assert!(compare_float(app.skunk, 53.51999999999998));
+        assert!(compare_float(cont.sifis_plain, 24.31578947368421));
+        assert!(compare_float(cont.sifis_quantized, 0.7368421052631579));
+        assert!(compare_float(cont.crap, 33.468671704875));
+        assert!(compare_float(cont.skunk, 9.965999999999998));
     }
 
     #[test]
@@ -953,27 +964,79 @@ mod tests {
         let h = &metrics[5].metrics;
         let app = &metrics[0].metrics;
         let cont = &metrics[2].metrics;
+
         assert_eq!(files_ignored.len(), 1);
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
-        assert!(compare_float(error.sifis_plain, 0.53125));
+        assert!(compare_float(error.sifis_plain, 0.0625));
         assert!(compare_float(error.sifis_quantized, 0.03125));
-        assert!(compare_float(error.crap, 257.9411765));
-        assert!(compare_float(error.skunk, 64.));
+        assert!(compare_float(error.crap, 5.3350760901120005));
+        assert!(compare_float(error.skunk, 7.5296));
         assert!(compare_float(ma.sifis_plain, 0.));
         assert!(compare_float(ma.sifis_quantized, 0.));
         assert!(compare_float(ma.crap, 72.));
         assert!(compare_float(ma.skunk, 32.));
-        assert!(compare_float(h.sifis_plain, 1.5));
+        assert!(compare_float(h.sifis_plain, 0.));
         assert!(compare_float(h.sifis_quantized, 0.5));
-        assert!(compare_float(h.crap, 3.));
-        assert!(compare_float(h.skunk, 0.12));
-        assert!(compare_float(app.sifis_plain, 66.5404157));
-        assert!(compare_float(app.sifis_quantized, 0.792147806));
-        assert!(compare_float(app.crap, 100.9161148));
-        assert!(compare_float(app.skunk, 44.97));
-        assert!(compare_float(cont.sifis_plain, 18.42105263));
-        assert!(compare_float(cont.sifis_quantized, 0.88721804511));
-        assert!(compare_float(cont.crap, 25.2689805));
-        assert!(compare_float(cont.skunk, 7.54999999999));
+        assert!(compare_float(h.crap, 0.));
+        assert!(compare_float(h.skunk, 0.));
+        assert!(compare_float(app.sifis_plain, 66.540415704388));
+        assert!(compare_float(app.sifis_quantized, 0.792147806004619));
+        assert!(compare_float(app.crap, 100.90156470643197));
+        assert!(compare_float(app.skunk, 44.95679999999998));
+        assert!(compare_float(cont.sifis_plain, 18.42105263157895));
+        assert!(compare_float(cont.sifis_quantized, 0.8872180451127819));
+        assert!(compare_float(cont.crap, 25.268980546875));
+        assert!(compare_float(cont.skunk, 7.549999999999997));
+    }
+
+    #[test]
+    fn test_file_csv() {
+        let json = Path::new(JSON);
+        let (metrics, files_ignored, complex_files, project_coverage) = get_metrics_concurrent(
+            "./data/test_project/",
+            json,
+            Complexity::Cyclomatic,
+            8,
+            &[30., 1.5, 35., 30.],
+        )
+        .unwrap();
+        print_metrics_to_csv(
+            metrics,
+            files_ignored,
+            complex_files,
+            "./data/test_project/to_compare.csv",
+            project_coverage,
+        )
+        .unwrap();
+        let to_compare = fs::read_to_string("./data/test_project/to_compare.csv").unwrap();
+        let expected = fs::read_to_string("./data/test_project/test.csv").unwrap();
+        assert!(to_compare == expected);
+        fs::remove_file("./data/test_project/to_compare.csv").unwrap();
+    }
+
+    #[test]
+    fn test_file_json() {
+        let json = Path::new(JSON);
+        let (metrics, files_ignored, complex_files, project_coverage) = get_metrics_concurrent(
+            "./data/test_project/",
+            json,
+            Complexity::Cyclomatic,
+            8,
+            &[30., 1.5, 35., 30.],
+        )
+        .unwrap();
+        print_metrics_to_json(
+            metrics,
+            files_ignored,
+            complex_files,
+            "./data/test_project/to_compare.json",
+            "./data/test_project/",
+            project_coverage,
+        )
+        .unwrap();
+        let to_compare = fs::read_to_string("./data/test_project/to_compare.json").unwrap();
+        let expected = fs::read_to_string("./data/test_project/test.json").unwrap();
+        assert!(to_compare == expected);
+        fs::remove_file("./data/test_project/to_compare.json").unwrap();
     }
 }

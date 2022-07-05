@@ -267,14 +267,21 @@ pub(crate) fn get_root(path: &Path) -> Result<FuncSpace> {
 
 // Get all spaces stating from root.
 // It does not contain the root
-pub(crate) fn get_spaces(root: &FuncSpace) -> Result<Vec<&FuncSpace>> {
-    let mut stack = vec![root];
-    let mut result = Vec::<&FuncSpace>::new();
-    while let Some(space) = stack.pop() {
+pub(crate) fn get_spaces(root: &FuncSpace) -> Result<Vec<(&FuncSpace, String)>> {
+    let mut stack = vec![(root, "".to_string())];
+    let mut result = Vec::<(&FuncSpace, String)>::new();
+    while let Some((space, path)) = stack.pop() {
         for s in &space.spaces {
-            stack.push(s);
+            let p = format!(
+                "{}/{} ({},{})",
+                path,
+                s.name.as_ref().ok_or(Error::PathConversionError())?,
+                s.start_line,
+                s.end_line
+            );
+            stack.push((s, p.clone()));
             if s.kind == SpaceKind::Function {
-                result.push(s);
+                result.push((s, p));
             }
         }
     }

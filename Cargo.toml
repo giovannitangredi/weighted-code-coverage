@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 rust-code-analysis="=0.0.24"
-serde_json ="=1.0.78"
+serde_json = {version ="=1.0.78", features = ["preserve_order"]}
 serde = "=1.0.136"
 thiserror= "=1.0.24"
 arg_enum_proc_macro = "=0.3"

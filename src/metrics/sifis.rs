@@ -106,6 +106,8 @@ pub(crate) fn sifis_quantized(
     Ok((sum / ploc, sum))
 }
 
+// Calculate the SIFIS plain value for a function
+// Return the value in case of success and an specif error in case of fails
 pub(crate) fn sifis_plain_function(
     space: &FuncSpace,
     covs: &[Value],
@@ -144,6 +146,9 @@ pub(crate) fn sifis_plain_function(
     Ok((sum / ploc, sum))
 }
 
+// Calculate the SIFIS quantized value for a function
+// Return the value in case of success and an specif error in case of fails
+// If the complexity of the block/file is 0 the value if sifis quantized is the coverage of the file
 pub(crate) fn sifis_quantized_function(
     space: &FuncSpace,
     covs: &[Value],

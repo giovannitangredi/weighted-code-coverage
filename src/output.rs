@@ -6,7 +6,7 @@ use serde_json::json;
 
 use crate::error::*;
 use crate::files::FileMetrics;
-use crate::functions::FunctionMetrics;
+use crate::functions::{FunctionMetrics, RootMetrics};
 
 // Export metrics on a csv in the specified path
 pub(crate) fn export_to_csv(
@@ -148,7 +148,7 @@ pub(crate) fn export_to_json(
 // Export metrics on a csv in the specified path for function mode
 pub(crate) fn export_to_csv_function(
     csv_path: &Path,
-    metrics: Vec<FunctionMetrics>,
+    metrics: Vec<RootMetrics>,
     files_ignored: Vec<String>,
     complex_functions: Vec<FunctionMetrics>,
     project_coverage: f64,
@@ -166,7 +166,7 @@ pub(crate) fn export_to_csv_function(
     ])?;
     metrics.iter().try_for_each(|m| -> Result<()> {
         writer.write_record(&[
-            &m.function_name,
+            &m.file_name,
             &format!("{:.3}", m.metrics.sifis_plain),
             &format!("{:.3}", m.metrics.sifis_quantized),
             &format!("{:.3}", m.metrics.crap),
@@ -175,6 +175,19 @@ pub(crate) fn export_to_csv_function(
             &format!("{}", m.metrics.is_complex),
             &m.file_path,
         ])?;
+        m.functions.iter().try_for_each(|m| -> Result<()> {
+            writer.write_record(&[
+                &m.function_name,
+                &format!("{:.3}", m.metrics.sifis_plain),
+                &format!("{:.3}", m.metrics.sifis_quantized),
+                &format!("{:.3}", m.metrics.crap),
+                &format!("{:.3}", m.metrics.skunk),
+                &format!("{}", false),
+                &format!("{}", m.metrics.is_complex),
+                &m.file_path,
+            ])?;
+            Ok(())
+        })?;
         Ok(())
     })?;
     writer.write_record(&[
@@ -261,7 +274,7 @@ pub(crate) fn export_to_csv_function(
 pub(crate) fn export_to_json_function(
     project_folder: &Path,
     output_path: &Path,
-    metrics: Vec<FunctionMetrics>,
+    metrics: Vec<RootMetrics>,
     files_ignored: Vec<String>,
     complex_functions: Vec<FunctionMetrics>,
     project_coverage: f64,
@@ -272,7 +285,7 @@ pub(crate) fn export_to_json_function(
         "project": project_folder.display().to_string(),
         "number_of_files_ignored": n_files,
         "number_of_complex_functions": number_of_complex_functions,
-        "metrics":metrics,
+        "files":metrics,
         "files_ignored":files_ignored,
         "complex_functions": complex_functions,
         "project_coverage" : project_coverage,
