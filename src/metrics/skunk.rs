@@ -24,11 +24,11 @@ pub(crate) fn skunk_nosmells(
     } else {
         get_coverage_perc(covs)? * 100.
     };
-    if cov == 100. {
-        Ok(comp / COMPLEXITY_FACTOR)
+    Ok(if cov == 100. {
+        comp / COMPLEXITY_FACTOR
     } else {
-        Ok((comp / COMPLEXITY_FACTOR) * (100. - (cov)))
-    }
+        (comp / COMPLEXITY_FACTOR) * (100. - (cov))
+    })
 }
 
 // Calculate the Skunkscore value for a function
@@ -55,11 +55,11 @@ pub(crate) fn skunk_nosmells_function(
             0.0
         }
     };
-    if cov == 100. {
-        Ok(comp / COMPLEXITY_FACTOR)
+    Ok(if cov == 100. {
+        comp / COMPLEXITY_FACTOR
     } else {
-        Ok((comp / COMPLEXITY_FACTOR) * (100. - (100. * cov)))
-    }
+        (comp / COMPLEXITY_FACTOR) * (100. - (100. * cov))
+    })
 }
 
 #[cfg(test)]
@@ -67,7 +67,6 @@ mod tests {
     use super::*;
     use crate::utility::{get_root, read_json};
     use std::fs;
-    use std::path::Path;
 
     const JSON: &str = "./data/data.json";
     const PREFIX: &str = "../rust-data-structures-main/";
@@ -80,8 +79,7 @@ mod tests {
     fn test_skunk_cyclomatic() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let skunk = skunk_nosmells(&root, &vec, COMP, None).unwrap();
         assert_eq!(skunk, 6.4);
@@ -91,8 +89,7 @@ mod tests {
     fn test_skunk_cognitive() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let skunk_cogn = skunk_nosmells(&root, &vec, COGN, None).unwrap();
         assert_eq!(skunk_cogn, 4.8);
@@ -102,8 +99,7 @@ mod tests {
     fn test_skunk_cyclomatic_function() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let skunk = skunk_nosmells_function(&root, &vec, COMP, None).unwrap();
         assert_eq!(skunk, 6.4);
@@ -113,8 +109,7 @@ mod tests {
     fn test_skunk_cognitive_function() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let skunk_cogn = skunk_nosmells_function(&root, &vec, COGN, None).unwrap();
         assert_eq!(skunk_cogn, 4.8);

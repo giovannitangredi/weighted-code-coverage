@@ -12,16 +12,10 @@ use tracing::debug;
 
 use crate::error::*;
 use crate::files::*;
-use crate::metrics::crap::{crap, crap_function};
-use crate::metrics::sifis::{
-    sifis_plain, sifis_plain_function, sifis_quantized, sifis_quantized_function,
-};
-use crate::metrics::skunk::{skunk_nosmells, skunk_nosmells_function};
-use crate::output::*;
 use crate::utility::*;
 
 /// Struct with all the metrics computed for the root
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq)]
 #[allow(dead_code)]
 pub struct RootMetrics {
     pub metrics: Metrics,
@@ -53,8 +47,8 @@ impl RootMetrics {
     pub fn avg(m: Metrics) -> Self {
         Self {
             metrics: m,
-            file_name: "AVG".to_string(),
-            file_path: "-".to_string(),
+            file_name: "AVG".into(),
+            file_path: "-".into(),
             start_line: 0,
             end_line: 0,
             functions: Vec::<FunctionMetrics>::new(),
@@ -64,8 +58,8 @@ impl RootMetrics {
     pub fn min(m: Metrics) -> Self {
         Self {
             metrics: m,
-            file_name: "MIN".to_string(),
-            file_path: "-".to_string(),
+            file_name: "MIN".into(),
+            file_path: "-".into(),
             start_line: 0,
             end_line: 0,
             functions: Vec::<FunctionMetrics>::new(),
@@ -75,8 +69,8 @@ impl RootMetrics {
     pub fn max(m: Metrics) -> Self {
         Self {
             metrics: m,
-            file_name: "MAX".to_string(),
-            file_path: "-".to_string(),
+            file_name: "MAX".into(),
+            file_path: "-".into(),
             start_line: 0,
             end_line: 0,
             functions: Vec::<FunctionMetrics>::new(),
@@ -85,7 +79,7 @@ impl RootMetrics {
 }
 
 /// Struct with all the metrics computed for a single function
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq)]
 #[allow(dead_code)]
 pub struct FunctionMetrics {
     pub metrics: Metrics,
@@ -205,7 +199,7 @@ fn consumer(
                 .ok_or(Error::PathConversionError())?
                 .to_str()
                 .ok_or(Error::PathConversionError())?
-                .to_string();
+                .into();
             // Get the coverage vector from the coveralls file
             // if not present the file will be added to the files ignored
             let arr = match covs.get(&file) {
@@ -232,36 +226,17 @@ fn consumer(
             let mut functions = Vec::<FunctionMetrics>::new();
             spaces.iter().try_for_each(|el| -> Result<()> {
                 let space = el.0;
-                let path = el.1.to_string();
-                let (sifis_plain, _) = sifis_plain_function(space, &arr, metric, false)?;
-                let (sifis_quantized, _) = sifis_quantized_function(space, &arr, metric, false)?;
-                let crap = crap_function(space, &arr, metric, None)?;
-                let skunk = skunk_nosmells_function(space, &arr, metric, None)?;
-                let file_path = path;
+                let file_path = el.1.to_string();
+                let (m, _): (Metrics, (f64, f64)) =
+                    Tree::get_metrics_from_space(space, &arr, metric, None, &thresholds)?;
                 let function_name = format!(
                     "{} ({}, {})",
                     space.name.as_ref().ok_or(Error::PathConversionError())?,
                     space.start_line,
                     space.end_line
                 );
-                let is_complex =
-                    check_complexity(sifis_plain, sifis_quantized, crap, skunk, &thresholds);
-                let (covered_lines, tot_lines) =
-                    get_covered_lines(&arr, space.start_line, space.end_line)?;
-                let coverage = if tot_lines != 0. {
-                    (covered_lines / tot_lines) * 100.
-                } else {
-                    0.0
-                };
                 functions.push(FunctionMetrics::new(
-                    Metrics::new(
-                        sifis_plain,
-                        sifis_quantized,
-                        crap,
-                        skunk,
-                        is_complex,
-                        f64::round(coverage * 100.0) / 100.0,
-                    ),
+                    m,
                     function_name,
                     file_path,
                     space.start_line,
@@ -269,14 +244,9 @@ fn consumer(
                 ));
                 Ok(())
             })?;
-            let (sifis_plain, sp_sum) = sifis_plain(&root, &arr, metric, false)?;
-            let (sifis_quantized, sq_sum) = sifis_quantized(&root, &arr, metric, false)?;
-            let crap = crap(&root, &arr, metric, None)?;
-            let skunk = skunk_nosmells(&root, &arr, metric, None)?;
+            let (m, (sp_sum, sq_sum)): (Metrics, (f64, f64)) =
+                Tree::get_metrics_from_space(&root, &arr, metric, None, &thresholds)?;
             let file_path = file.clone().split_off(prefix);
-            let is_complex =
-                check_complexity(sifis_plain, sifis_quantized, crap, skunk, &thresholds);
-            let coverage = get_coverage_perc(&arr)? * 100.;
             // Upgrade all the global variables and add metrics to the result and complex_files
             let mut res = res.lock()?;
             composer_output.covered_lines += covered_lines;
@@ -286,14 +256,7 @@ fn consumer(
             composer_output.sifis_quantized_sum += sq_sum;
             composer_output.comp_sum += comp;
             res.push(RootMetrics::new(
-                Metrics::new(
-                    sifis_plain,
-                    sifis_quantized,
-                    crap,
-                    skunk,
-                    is_complex,
-                    f64::round(coverage * 100.0) / 100.0,
-                ),
+                m,
                 file_name,
                 file_path,
                 root.start_line,
@@ -315,7 +278,7 @@ fn consumer(
 fn chunk_vector(vec: Vec<String>, n_threads: usize) -> Vec<Vec<String>> {
     let chunks = vec.chunks((vec.len() / n_threads).max(1));
     chunks
-        .map(|chunk| chunk.iter().map(|c| c.to_string()).collect::<Vec<String>>())
+        .map(|chunk| chunk.iter().map(|c| c.into()).collect::<Vec<String>>())
         .collect::<Vec<Vec<String>>>()
 }
 
@@ -407,8 +370,8 @@ pub fn get_functions_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + 
     let composer_output = composer.join()??;
     let project_metric = RootMetrics::new(
         get_project_metrics(composer_output, None)?,
-        "PROJECT".to_string(),
-        "-".to_string(),
+        "PROJECT".into(),
+        "-".into(),
         0,
         0,
         Vec::<FunctionMetrics>::new(),
@@ -507,7 +470,7 @@ fn consumer_covdir(
                 .ok_or(Error::PathConversionError())?
                 .to_str()
                 .ok_or(Error::PathConversionError())?
-                .to_string();
+                .into();
             // Get the coverage vector from the covdir file
             // If not present the file will be added to the files ignored
             let covdir = match covs.get(&file) {
@@ -530,30 +493,17 @@ fn consumer_covdir(
             let mut functions = Vec::<FunctionMetrics>::new();
             spaces.iter().try_for_each(|el| -> Result<()> {
                 let space = el.0;
-                let path = el.1.to_string();
-                let (sifis_plain, _) = sifis_plain_function(space, arr, metric, true)?;
-                let (sifis_quantized, _) = sifis_quantized_function(space, arr, metric, true)?;
-                let crap = crap_function(space, arr, metric, coverage)?;
-                let skunk = skunk_nosmells_function(space, arr, metric, coverage)?;
-                let file_path = path;
+                let file_path = el.1.to_string();
                 let function_name = format!(
                     "{} ({}, {})",
                     space.name.as_ref().ok_or(Error::ConversionError())?,
                     space.start_line,
                     space.end_line
                 );
-                let is_complex =
-                    check_complexity(sifis_plain, sifis_quantized, crap, skunk, &thresholds);
-                let coverage = covdir.coverage;
+                let (m, _): (Metrics, (f64, f64)) =
+                    Tree::get_metrics_from_space(space, arr, metric, coverage, &thresholds)?;
                 functions.push(FunctionMetrics::new(
-                    Metrics::new(
-                        sifis_plain,
-                        sifis_quantized,
-                        crap,
-                        skunk,
-                        is_complex,
-                        f64::round(coverage * 100.0) / 100.0,
-                    ),
+                    m,
                     function_name,
                     file_path,
                     space.start_line,
@@ -561,14 +511,9 @@ fn consumer_covdir(
                 ));
                 Ok(())
             })?;
-            let (sifis_plain, sp_sum) = sifis_plain(&root, arr, metric, true)?;
-            let (sifis_quantized, sq_sum) = sifis_quantized(&root, arr, metric, true)?;
-            let crap = crap(&root, arr, metric, coverage)?;
-            let skunk = skunk_nosmells(&root, arr, metric, coverage)?;
             let file_path = file.clone().split_off(prefix);
-            let is_complex =
-                check_complexity(sifis_plain, sifis_quantized, crap, skunk, &thresholds);
-            let coverage = covdir.coverage;
+            let (m, (sp_sum, sq_sum)): (Metrics, (f64, f64)) =
+                Tree::get_metrics_from_space(&root, arr, metric, coverage, &thresholds)?;
             // Upgrade all the global variables and add metrics to the result and complex_files
             let mut res = res.lock()?;
             composer_output.ploc_sum += ploc;
@@ -576,14 +521,7 @@ fn consumer_covdir(
             composer_output.sifis_quantized_sum += sq_sum;
             composer_output.comp_sum += comp;
             res.push(RootMetrics::new(
-                Metrics::new(
-                    sifis_plain,
-                    sifis_quantized,
-                    crap,
-                    skunk,
-                    is_complex,
-                    f64::round(coverage * 100.0) / 100.0,
-                ),
+                m,
                 file_name,
                 file_path,
                 root.start_line,
@@ -687,8 +625,8 @@ pub fn get_functions_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<P
     let composer_output = composer.join()??;
     let project_metric = RootMetrics::new(
         get_project_metrics(composer_output, Some(project_coverage))?,
-        "PROJECT".to_string(),
-        "-".to_string(),
+        "PROJECT".into(),
+        "-".into(),
         0,
         0,
         Vec::<FunctionMetrics>::new(),
@@ -718,98 +656,16 @@ pub fn get_functions_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<P
     ))
 }
 
-pub fn get_metrics_output_function(
-    metrics: Vec<RootMetrics>,
-    files_ignored: Vec<String>,
-    complex_files: Vec<FunctionMetrics>,
-) -> Result<()> {
-    println!(
-        "{0: <20} | {1: <20} | {2: <20} | {3: <20} | {4: <20} | {5: <20} | {6: <30}",
-        "FUNCTION", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNKSCORE", "IS_COMPLEX", "PATH"
-    );
-    metrics.iter().for_each(|m| {
-        println!(
-            "{0: <20} | {1: <20.3} | {2: <20.3} | {3: <20.3} | {4: <20.3} | {5: <20} | {6: <30}",
-            m.file_name,
-            m.metrics.sifis_plain,
-            m.metrics.sifis_quantized,
-            m.metrics.crap,
-            m.metrics.skunk,
-            m.metrics.is_complex,
-            m.file_path
-        );
-        m.functions.iter().for_each(|f|{
-            println!(
-                "{0: <20} | {1: <20.3} | {2: <20.3} | {3: <20.3} | {4: <20.3} | {5: <20} | {6: <30}",
-                f.function_name,
-                f.metrics.sifis_plain,
-                f.metrics.sifis_quantized,
-                f.metrics.crap,
-                f.metrics.skunk,
-                f.metrics.is_complex,
-                f.file_path
-            );
-        });
-    });
-    println!("FILES IGNORED: {}", files_ignored.len());
-    println!("COMPLEX FUNCTIONS: {}", complex_files.len());
-    Ok(())
-}
-
-/// Prints the the given  metrics per function ,files ignored and complex function  in a csv format
-/// The structure is the following :
-/// "FUNCTION","SIFIS PLAIN","SIFIS QUANTIZED","CRAP","SKUNK","IGNORED","IS COMPLEX","FILE PATH",
-pub fn print_metrics_to_csv_function<A: AsRef<Path> + Copy>(
-    metrics: Vec<RootMetrics>,
-    files_ignored: Vec<String>,
-    complex_functions: Vec<FunctionMetrics>,
-    csv_path: A,
-    project_coverage: f64,
-) -> Result<()> {
-    debug!("Exporting to csv...");
-    export_to_csv_function(
-        csv_path.as_ref(),
-        metrics,
-        files_ignored,
-        complex_functions,
-        project_coverage,
-    )
-}
-
-/// Prints the the given  metrics per function,files ignored and complex functions  in a json format
-pub fn print_metrics_to_json_function<A: AsRef<Path> + Copy>(
-    metrics: Vec<RootMetrics>,
-    files_ignored: Vec<String>,
-    complex_functions: Vec<FunctionMetrics>,
-    json_output: A,
-    project_folder: A,
-    project_coverage: f64,
-) -> Result<()> {
-    debug!("Exporting to json...");
-    export_to_json_function(
-        project_folder.as_ref(),
-        json_output.as_ref(),
-        metrics,
-        files_ignored,
-        complex_functions,
-        project_coverage,
-    )
-}
-
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use core::cmp::Ordering;
+    use crate::utility::compare_float;
+
     const JSON: &str = "./data/seahorse/seahorse.json";
     const COVDIR: &str = "./data/seahorse/covdir.json";
     const PROJECT: &str = "./data/seahorse/";
     const IGNORED: &str = "./data/seahorse/src/action.rs";
-
-    #[inline(always)]
-    fn compare_float(a: f64, b: f64) -> bool {
-        a.total_cmp(&b) == Ordering::Equal
-    }
 
     #[test]
     fn test_metrics_coveralls_cyclomatic() {
@@ -840,7 +696,7 @@ mod tests {
         assert!(compare_float(h.sifis_plain, 1.5));
         assert!(compare_float(h.sifis_quantized, 0.5));
         assert!(compare_float(h.crap, 3.));
-        assert!(compare_float(h.skunk, 0.12));
+        assert!(compare_float(h.skunk, 0.));
         assert!(compare_float(app_root.sifis_plain, 79.21478060046189));
         assert!(compare_float(app_root.sifis_quantized, 0.792147806004619));
         assert!(compare_float(app_root.crap, 123.97408556537728));
@@ -954,7 +810,7 @@ mod tests {
         assert!(compare_float(h.sifis_plain, 1.5));
         assert!(compare_float(h.sifis_quantized, 0.5));
         assert!(compare_float(h.crap, 3.));
-        assert!(compare_float(h.skunk, 0.12));
+        assert!(compare_float(h.skunk, 0.));
         assert!(compare_float(app_root.sifis_plain, 79.21478060046189));
         assert!(compare_float(app_root.sifis_quantized, 0.792147806004619));
         assert!(compare_float(app_root.crap, 123.95346471999996));
@@ -1009,6 +865,7 @@ mod tests {
         println!("{:?}", cont_root);
         println!("{:?}", app_app_new_only_test);
         println!("{:?}", cont_bool_flag);
+        println!("{:?}", &metrics[0].functions[0]);
         assert_eq!(files_ignored.len(), 1);
         assert!(files_ignored[0] == ignored.as_os_str().to_str().unwrap());
         assert!(compare_float(ma.sifis_plain, 0.));
@@ -1044,60 +901,5 @@ mod tests {
         ));
         assert!(compare_float(cont_bool_flag.crap, 1.000430368875));
         assert!(compare_float(cont_bool_flag.skunk, 0.3019999999999999));
-    }
-
-    #[test]
-    fn test_file_csv() {
-        let json = Path::new(JSON);
-        let (metrics, files_ignored, complex_files, project_coverage) =
-            get_functions_metrics_concurrent(
-                "./data/test_project/",
-                json,
-                Complexity::Cyclomatic,
-                8,
-                &[30., 1.5, 35., 30.],
-            )
-            .unwrap();
-        print_metrics_to_csv_function(
-            metrics,
-            files_ignored,
-            complex_files,
-            "./data/test_project/to_compare_fun.csv",
-            project_coverage,
-        )
-        .unwrap();
-        let to_compare = fs::read_to_string("./data/test_project/to_compare_fun.csv").unwrap();
-        let expected = fs::read_to_string("./data/test_project/test_fun.csv")
-            .unwrap()
-            .replace('\r', "");
-        assert!(to_compare == expected);
-        fs::remove_file("./data/test_project/to_compare_fun.csv").unwrap();
-    }
-
-    #[test]
-    fn test_file_json() {
-        let json = Path::new(JSON);
-        let (metrics, files_ignored, complex_files, project_coverage) =
-            get_functions_metrics_concurrent(
-                "./data/test_project/",
-                json,
-                Complexity::Cyclomatic,
-                8,
-                &[30., 1.5, 35., 30.],
-            )
-            .unwrap();
-        print_metrics_to_json_function(
-            metrics,
-            files_ignored,
-            complex_files,
-            "./data/test_project/to_compare_fun.json",
-            "./data/test_project/",
-            project_coverage,
-        )
-        .unwrap();
-        let to_compare = fs::read_to_string("./data/test_project/to_compare_fun.json").unwrap();
-        let expected = fs::read_to_string("./data/test_project/test_fun.json").unwrap();
-        assert!(to_compare == expected);
-        fs::remove_file("./data/test_project/to_compare_fun.json").unwrap();
     }
 }

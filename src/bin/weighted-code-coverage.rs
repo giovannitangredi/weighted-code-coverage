@@ -6,6 +6,7 @@ use tracing_subscriber::EnvFilter;
 use weighted_code_coverage::error::*;
 use weighted_code_coverage::files::*;
 use weighted_code_coverage::functions::*;
+use weighted_code_coverage::output::*;
 use weighted_code_coverage::utility::Complexity;
 use weighted_code_coverage::utility::JsonFormat;
 use weighted_code_coverage::utility::Mode;
@@ -55,25 +56,18 @@ fn run_functions(args: &Args) -> Result<()> {
         )?,
     };
     if let Some(csv) = &args.path_csv {
-        print_metrics_to_csv_function(
-            metrics.clone(),
-            files_ignored.clone(),
-            complex_files.clone(),
-            &csv,
-            project_coverage,
-        )?;
+        print_metrics_to_csv_function(&metrics, &files_ignored, &csv, project_coverage)?;
     }
     if let Some(json) = &args.json_output {
         print_metrics_to_json_function(
-            metrics.clone(),
-            files_ignored.clone(),
-            complex_files.clone(),
+            &metrics,
+            &files_ignored,
             &json,
             &&args.path_file,
             project_coverage,
         )?;
     };
-    get_metrics_output_function(metrics, files_ignored, complex_files)?;
+    get_metrics_output_function(&metrics, &files_ignored, &complex_files);
     Ok(())
 }
 
@@ -97,25 +91,18 @@ fn run_files(args: &Args) -> Result<()> {
         )?,
     };
     if let Some(csv) = &args.path_csv {
-        print_metrics_to_csv(
-            metrics.clone(),
-            files_ignored.clone(),
-            complex_files.clone(),
-            &csv,
-            project_coverage,
-        )?;
+        print_metrics_to_csv(&metrics, &files_ignored, &csv, project_coverage)?;
     }
     if let Some(json) = &args.json_output {
         print_metrics_to_json(
-            metrics.clone(),
-            files_ignored.clone(),
-            complex_files.clone(),
+            &metrics,
+            &files_ignored,
             &json,
             &&args.path_file,
             project_coverage,
         )?;
     };
-    get_metrics_output(metrics, files_ignored, complex_files)?;
+    get_metrics_output(&metrics, &files_ignored, &complex_files);
     Ok(())
 }
 
@@ -151,7 +138,7 @@ struct Args {
     #[clap(short, long, global = true)]
     verbose: bool,
     /// Choose mode to use for analysis
-    #[structopt(long, short='m', required = false, possible_values = Mode::variants(), default_value= Mode::default() )]
+    #[structopt(long, short='m',  possible_values = Mode::variants(), default_value= Mode::default() )]
     mode: Mode,
 }
 

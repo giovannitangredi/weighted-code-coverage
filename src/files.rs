@@ -11,14 +11,13 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::error::*;
-use crate::metrics::crap::crap;
-use crate::metrics::sifis::{sifis_plain, sifis_quantized};
-use crate::metrics::skunk::skunk_nosmells;
-use crate::output::*;
+use crate::metrics::crap::*;
+use crate::metrics::sifis::*;
+use crate::metrics::skunk::*;
 use crate::utility::*;
 
 /// Struct containing all the metrics
-#[derive(Clone, Default, Debug, Serialize, Deserialize, Copy)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize, Copy, PartialEq)]
 pub struct Metrics {
     pub sifis_plain: f64,
     pub sifis_quantized: f64,
@@ -46,10 +45,21 @@ impl Metrics {
             coverage,
         }
     }
+
+    pub fn min() -> Self {
+        Self {
+            sifis_plain: f64::MAX,
+            sifis_quantized: f64::MAX,
+            crap: f64::MAX,
+            skunk: f64::MAX,
+            is_complex: false,
+            coverage: 100.0,
+        }
+    }
 }
 
 /// Struct with all the metrics computed for a single file
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq)]
 #[allow(dead_code)]
 pub struct FileMetrics {
     pub metrics: Metrics,
@@ -69,60 +79,29 @@ impl FileMetrics {
     pub fn avg(m: Metrics) -> Self {
         Self {
             metrics: m,
-            file: "AVG".to_string(),
-            file_path: "-".to_string(),
+            file: "AVG".into(),
+            file_path: "-".into(),
         }
     }
 
     pub fn min(m: Metrics) -> Self {
         Self {
             metrics: m,
-            file: "MIN".to_string(),
-            file_path: "-".to_string(),
+            file: "MIN".into(),
+            file_path: "-".into(),
         }
     }
 
     pub fn max(m: Metrics) -> Self {
         Self {
             metrics: m,
-            file: "MAX".to_string(),
-            file_path: "-".to_string(),
+            file: "MAX".into(),
+            file_path: "-".into(),
         }
     }
 }
 
 type Output = (Vec<FileMetrics>, Vec<String>, Vec<FileMetrics>, f64);
-
-/// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
-/// It prints all the SIFIS, CRAP and SkunkScore values for all the files in the folders
-/// the output will be print as follows:
-/// FILE       | SIFIS PLAIN | SIFIS QUANTIZED | CRAP       | SKUNKSCORE | "IS_COMPLEX" | "PATH"
-/// if the a file is not found in the json that files will be skipped
-pub fn get_metrics_output(
-    metrics: Vec<FileMetrics>,
-    files_ignored: Vec<String>,
-    complex_files: Vec<FileMetrics>,
-) -> Result<()> {
-    println!(
-        "{0: <20} | {1: <20} | {2: <20} | {3: <20} | {4: <20} | {5: <20} | {6: <30}",
-        "FILE", "SIFIS PLAIN", "SIFIS QUANTIZED", "CRAP", "SKUNKSCORE", "IS_COMPLEX", "PATH"
-    );
-    metrics.iter().for_each(|m| {
-        println!(
-            "{0: <20} | {1: <20.3} | {2: <20.3} | {3: <20.3} | {4: <20.3} | {5: <20} | {6: <30}",
-            m.file,
-            m.metrics.sifis_plain,
-            m.metrics.sifis_quantized,
-            m.metrics.crap,
-            m.metrics.skunk,
-            m.metrics.is_complex,
-            m.file_path
-        );
-    });
-    println!("FILES IGNORED: {}", files_ignored.len());
-    println!("COMPLEX FILES: {}", complex_files.len());
-    Ok(())
-}
 
 /// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
 /// if the a file is not found in the json that files will be skipped
@@ -156,13 +135,12 @@ pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
             .ok_or(Error::PathConversionError())?
             .to_str()
             .ok_or(Error::PathConversionError())?
-            .to_string();
-        let arr = match covs.get(&path) {
-            Some(arr) => arr.to_vec(),
-            None => {
-                files_ignored.push(file);
-                continue;
-            }
+            .into();
+        let arr = if let Some(arr) = covs.get(&path) {
+            arr.to_vec()
+        } else {
+            files_ignored.push(path);
+            continue;
         };
         let root = get_root(p)?;
         let (_covered_lines, _tot_lines) = get_covered_lines(&arr, root.start_line, root.end_line)?;
@@ -336,7 +314,7 @@ fn consumer(receiver: JobReceiver, sender_composer: ComposerSender, cfg: &Config
                 .ok_or(Error::PathConversionError())?
                 .to_str()
                 .ok_or(Error::PathConversionError())?
-                .to_string();
+                .into();
             // Get the coverage vector from the coveralls file
             // if not present the file will be added to the files ignored
             let arr = match covs.get(&file) {
@@ -359,15 +337,10 @@ fn consumer(receiver: JobReceiver, sender_composer: ComposerSender, cfg: &Config
                 Complexity::Cyclomatic => root.metrics.cyclomatic.cyclomatic_sum(),
                 Complexity::Cognitive => root.metrics.cognitive.cognitive_sum(),
             };
-            let (sifis_plain, sp_sum) = sifis_plain(&root, &arr, metric, false)?;
-            let (sifis_quantized, sq_sum) = sifis_quantized(&root, &arr, metric, false)?;
-            let crap = crap(&root, &arr, metric, None)?;
-            let skunk = skunk_nosmells(&root, &arr, metric, None)?;
             let file_path = file.clone().split_off(prefix);
-            let is_complex =
-                check_complexity(sifis_plain, sifis_quantized, crap, skunk, &thresholds);
-            let coverage = get_coverage_perc(&arr)? * 100.;
             // Upgrade all the global variables and add metrics to the result and complex_files
+            let (m, (sp_sum, sq_sum)): (Metrics, (f64, f64)) =
+                Tree::get_metrics_from_space(&root, &arr, metric, None, &thresholds)?;
             let mut res = res.lock()?;
             composer_output.covered_lines += covered_lines;
             composer_output.total_lines += tot_lines;
@@ -375,18 +348,7 @@ fn consumer(receiver: JobReceiver, sender_composer: ComposerSender, cfg: &Config
             composer_output.sifis_plain_sum += sp_sum;
             composer_output.sifis_quantized_sum += sq_sum;
             composer_output.comp_sum += comp;
-            res.push(FileMetrics::new(
-                Metrics::new(
-                    sifis_plain,
-                    sifis_quantized,
-                    crap,
-                    skunk,
-                    is_complex,
-                    f64::round(coverage * 100.0) / 100.0,
-                ),
-                file_name,
-                file_path,
-            ));
+            res.push(FileMetrics::new(m, file_name, file_path));
         }
     }
     if let Err(_e) = sender_composer.send(Some(composer_output)) {
@@ -402,7 +364,7 @@ fn consumer(receiver: JobReceiver, sender_composer: ComposerSender, cfg: &Config
 fn chunk_vector(vec: Vec<String>, n_threads: usize) -> Vec<Vec<String>> {
     let chunks = vec.chunks((vec.len() / n_threads).max(1));
     chunks
-        .map(|chunk| chunk.iter().map(|c| c.to_string()).collect::<Vec<String>>())
+        .map(|chunk| chunk.iter().map(|c| c.into()).collect::<Vec<String>>())
         .collect::<Vec<Vec<String>>>()
 }
 
@@ -494,8 +456,8 @@ pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
     let composer_output = composer.join()??;
     let project_metric = FileMetrics::new(
         get_project_metrics(composer_output, None)?,
-        "PROJECT".to_string(),
-        "-".to_string(),
+        "PROJECT".into(),
+        "-".into(),
     );
     let project_coverage = project_metric.metrics.coverage;
     files_ignored.sort();
@@ -590,7 +552,7 @@ fn consumer_covdir(
                 .ok_or(Error::PathConversionError())?
                 .to_str()
                 .ok_or(Error::PathConversionError())?
-                .to_string();
+                .into();
             // Get the coverage vector from the covdir file
             // If not present the file will be added to the files ignored
             let covdir = match covs.get(&file) {
@@ -609,32 +571,16 @@ fn consumer_covdir(
                 Complexity::Cyclomatic => root.metrics.cyclomatic.cyclomatic_sum(),
                 Complexity::Cognitive => root.metrics.cognitive.cognitive_sum(),
             };
-            let (sifis_plain, sp_sum) = sifis_plain(&root, arr, metric, true)?;
-            let (sifis_quantized, sq_sum) = sifis_quantized(&root, arr, metric, true)?;
-            let crap = crap(&root, arr, metric, coverage)?;
-            let skunk = skunk_nosmells(&root, arr, metric, coverage)?;
             let file_path = file.clone().split_off(prefix);
-            let is_complex =
-                check_complexity(sifis_plain, sifis_quantized, crap, skunk, &thresholds);
+            let (m, (sp_sum, sq_sum)): (Metrics, (f64, f64)) =
+                Tree::get_metrics_from_space(&root, arr, metric, coverage, &thresholds)?;
             let mut res = res.lock()?;
             // Update all shared variables
             composer_output.ploc_sum += ploc;
             composer_output.sifis_plain_sum += sp_sum;
             composer_output.sifis_quantized_sum += sq_sum;
             composer_output.comp_sum += comp;
-            let coverage = covdir.coverage;
-            res.push(FileMetrics::new(
-                Metrics::new(
-                    sifis_plain,
-                    sifis_quantized,
-                    crap,
-                    skunk,
-                    is_complex,
-                    f64::round(coverage * 100.0) / 100.0,
-                ),
-                file_name,
-                file_path,
-            ));
+            res.push(FileMetrics::new(m, file_name, file_path));
         }
     }
     if let Err(_e) = sender_composer.send(Some(composer_output)) {
@@ -734,8 +680,8 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     let composer_output = composer.join()??;
     let project_metric = FileMetrics::new(
         get_project_metrics(composer_output, Some(project_coverage))?,
-        "PROJECT".to_string(),
-        "-".to_string(),
+        "PROJECT".into(),
+        "-".into(),
     );
     files_ignored.sort();
     res.sort_by(|a, b| a.file.cmp(&b.file));
@@ -762,60 +708,16 @@ pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Cop
     ))
 }
 
-/// Prints the the given  metrics ,files ignored and complex files  in a csv format
-/// The structure is the following :
-/// "FILE","SIFIS PLAIN","SIFIS QUANTIZED","CRAP","SKUNK","IGNORED","IS COMPLEX","FILE PATH",
-pub fn print_metrics_to_csv<A: AsRef<Path> + Copy>(
-    metrics: Vec<FileMetrics>,
-    files_ignored: Vec<String>,
-    complex_files: Vec<FileMetrics>,
-    csv_path: A,
-    project_coverage: f64,
-) -> Result<()> {
-    debug!("Exporting to csv...");
-    export_to_csv(
-        csv_path.as_ref(),
-        metrics,
-        files_ignored,
-        complex_files,
-        project_coverage,
-    )
-}
-
-/// Prints the the given  metrics ,files ignored and complex files  in a json format
-pub fn print_metrics_to_json<A: AsRef<Path> + Copy>(
-    metrics: Vec<FileMetrics>,
-    files_ignored: Vec<String>,
-    complex_files: Vec<FileMetrics>,
-    json_output: A,
-    project_folder: A,
-    project_coverage: f64,
-) -> Result<()> {
-    debug!("Exporting to json...");
-    export_to_json(
-        project_folder.as_ref(),
-        json_output.as_ref(),
-        metrics,
-        files_ignored,
-        complex_files,
-        project_coverage,
-    )
-}
-
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use core::cmp::Ordering;
+    use crate::utility::compare_float;
+
     const JSON: &str = "./data/seahorse/seahorse.json";
     const COVDIR: &str = "./data/seahorse/covdir.json";
     const PROJECT: &str = "./data/seahorse/";
     const IGNORED: &str = "./data/seahorse/src/action.rs";
-
-    #[inline(always)]
-    fn compare_float(a: f64, b: f64) -> bool {
-        a.total_cmp(&b) == Ordering::Equal
-    }
 
     #[test]
     fn test_metrics_coveralls_cyclomatic() {
@@ -849,7 +751,7 @@ mod tests {
         assert!(compare_float(h.sifis_plain, 1.5));
         assert!(compare_float(h.sifis_quantized, 0.5));
         assert!(compare_float(h.crap, 3.));
-        assert!(compare_float(h.skunk, 0.12));
+        assert!(compare_float(h.skunk, 0.));
         assert!(compare_float(app.sifis_plain, 79.21478060046189));
         assert!(compare_float(app.sifis_quantized, 0.792147806004619));
         assert!(compare_float(app.crap, 123.97408556537728));
@@ -935,7 +837,7 @@ mod tests {
         assert!(compare_float(h.sifis_plain, 1.5));
         assert!(compare_float(h.sifis_quantized, 0.5));
         assert!(compare_float(h.crap, 3.));
-        assert!(compare_float(h.skunk, 0.12));
+        assert!(compare_float(h.skunk, 0.));
         assert!(compare_float(app.sifis_plain, 79.21478060046189));
         assert!(compare_float(app.sifis_quantized, 0.792147806004619));
         assert!(compare_float(app.crap, 123.95346471999996));
@@ -987,58 +889,5 @@ mod tests {
         assert!(compare_float(cont.sifis_quantized, 0.8872180451127819));
         assert!(compare_float(cont.crap, 25.268980546875));
         assert!(compare_float(cont.skunk, 7.549999999999997));
-    }
-
-    #[test]
-    fn test_file_csv() {
-        let json = Path::new(JSON);
-        let (metrics, files_ignored, complex_files, project_coverage) = get_metrics_concurrent(
-            "./data/test_project/",
-            json,
-            Complexity::Cyclomatic,
-            8,
-            &[30., 1.5, 35., 30.],
-        )
-        .unwrap();
-        print_metrics_to_csv(
-            metrics,
-            files_ignored,
-            complex_files,
-            "./data/test_project/to_compare.csv",
-            project_coverage,
-        )
-        .unwrap();
-        let to_compare = fs::read_to_string("./data/test_project/to_compare.csv").unwrap();
-        let expected = fs::read_to_string("./data/test_project/test.csv")
-            .unwrap()
-            .replace('\r', "");
-        assert!(to_compare == expected);
-        fs::remove_file("./data/test_project/to_compare.csv").unwrap();
-    }
-
-    #[test]
-    fn test_file_json() {
-        let json = Path::new(JSON);
-        let (metrics, files_ignored, complex_files, project_coverage) = get_metrics_concurrent(
-            "./data/test_project/",
-            json,
-            Complexity::Cyclomatic,
-            8,
-            &[30., 1.5, 35., 30.],
-        )
-        .unwrap();
-        print_metrics_to_json(
-            metrics,
-            files_ignored,
-            complex_files,
-            "./data/test_project/to_compare.json",
-            "./data/test_project/",
-            project_coverage,
-        )
-        .unwrap();
-        let to_compare = fs::read_to_string("./data/test_project/to_compare.json").unwrap();
-        let expected = fs::read_to_string("./data/test_project/test.json").unwrap();
-        assert!(to_compare == expected);
-        fs::remove_file("./data/test_project/to_compare.json").unwrap();
     }
 }

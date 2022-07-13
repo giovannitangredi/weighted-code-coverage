@@ -57,7 +57,6 @@ mod tests {
     use super::*;
     use crate::utility::{get_root, read_json};
     use std::fs;
-    use std::path::Path;
 
     const JSON: &str = "./data/data.json";
     const PREFIX: &str = "../rust-data-structures-main/";
@@ -70,8 +69,7 @@ mod tests {
     fn test_crap_cyclomatic() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let crap_cy = crap(&root, &vec, COMP, None).unwrap();
         assert_eq!(crap_cy, 5.024);
@@ -81,8 +79,7 @@ mod tests {
     fn test_crap_cognitive() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let crap_cogn = crap(&root, &vec, COGN, None).unwrap();
         assert_eq!(crap_cogn, 3.576);
@@ -91,8 +88,7 @@ mod tests {
     fn test_crap_cyclomatic_function() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let crap_cy = crap_function(&root, &vec, COMP, None).unwrap();
         assert_eq!(crap_cy, 5.024);
@@ -102,8 +98,7 @@ mod tests {
     fn test_crap_cognitive_function() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let crap_cogn = crap_function(&root, &vec, COGN, None).unwrap();
         assert_eq!(crap_cogn, 3.576);

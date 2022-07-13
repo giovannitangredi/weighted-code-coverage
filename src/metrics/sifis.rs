@@ -130,7 +130,9 @@ pub(crate) fn sifis_plain_function(
                 line.is_null()
             };
             let sum;
-            if !is_null && i >= space.start_line - 1 && i < space.end_line {
+            let start = space.start_line - 1;
+            let end = space.end_line;
+            if !is_null && (start..end).contains(&i) {
                 // If the line is not null and is covered (cov>0) the add the complexity  to the sum
                 let cov = line.as_u64().ok_or(Error::ConversionError())?;
                 if cov > 0 {
@@ -168,7 +170,9 @@ pub(crate) fn sifis_quantized_function(
                     line.is_null()
                 };
                 let sum;
-                if !is_null && i>= space.start_line-1 && i< space.end_line {
+                let start = space.start_line-1;
+                let end =space.end_line;
+                if !is_null && (start..end).contains(&i) {
                     // Get line
                     let cov = line.as_u64().ok_or(Error::ConversionError())?;
                     if cov > 0 {
@@ -196,7 +200,6 @@ pub(crate) fn sifis_quantized_function(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
 
     use super::*;
     use crate::utility::{get_root, read_json};
@@ -213,8 +216,7 @@ mod tests {
     fn test_sifis_plain_cyclomatic() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let (sifis, _) = sifis_plain(&root, &vec, COMP, false).unwrap();
         assert_eq!(sifis, 24. / 10.);
@@ -224,8 +226,7 @@ mod tests {
     fn test_sifis_plain_cognitive() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let (sifis_cogn, _) = sifis_plain(&root, &vec, COGN, false).unwrap();
         assert_eq!(sifis_cogn, 18. / 10.);
@@ -235,8 +236,7 @@ mod tests {
     fn test_sifis_quantized_cyclomatic() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let (sifis, _) = sifis_quantized(&root, &vec, COMP, false).unwrap();
         assert_eq!(sifis, 6. / 10.);
@@ -246,8 +246,7 @@ mod tests {
     fn test_sifis_quantized_cognitive() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let (sifis_cogn, _) = sifis_quantized(&root, &vec, COGN, false).unwrap();
         assert_eq!(sifis_cogn, 6. / 10.);
@@ -257,8 +256,7 @@ mod tests {
     fn test_sifis_plain_cyclomatic_function() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let (sifis, _) = sifis_plain_function(&root, &vec, COMP, false).unwrap();
         assert_eq!(sifis, 24. / 10.);
@@ -268,8 +266,7 @@ mod tests {
     fn test_sifis_plain_cognitive_function() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let (sifis_cogn, _) = sifis_plain_function(&root, &vec, COGN, false).unwrap();
         assert_eq!(sifis_cogn, 18. / 10.);
@@ -279,8 +276,7 @@ mod tests {
     fn test_sifis_quantized_cyclomatic_function() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let (sifis, _) = sifis_quantized_function(&root, &vec, COMP, false).unwrap();
         assert_eq!(sifis, 6. / 10.);
@@ -290,8 +286,7 @@ mod tests {
     fn test_sifis_quantized_cognitive_function() {
         let file = fs::read_to_string(JSON).unwrap();
         let covs = read_json(file, PREFIX).unwrap();
-        let path = Path::new(FILE);
-        let root = get_root(path).unwrap();
+        let root = get_root(FILE).unwrap();
         let vec = covs.get(SIMPLE).unwrap().to_vec();
         let (sifis_cogn, _) = sifis_quantized_function(&root, &vec, COGN, false).unwrap();
         assert_eq!(sifis_cogn, 6. / 10.);

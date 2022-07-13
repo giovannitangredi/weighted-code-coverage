@@ -1,3 +1,4 @@
+use core::cmp::Ordering;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs;
@@ -10,8 +11,10 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::error::*;
-use crate::files::JobComposer;
-use crate::files::Metrics;
+use crate::files::*;
+use crate::metrics::crap::*;
+use crate::metrics::sifis::*;
+use crate::metrics::skunk::*;
 
 const COMPLEXITY_FACTOR: f64 = 25.0;
 
@@ -64,6 +67,59 @@ impl Mode {
     pub const fn default() -> &'static str {
         "files"
     }
+}
+
+pub(crate) trait Visit {
+    fn get_metrics_from_space(
+        space: &FuncSpace,
+        covs: &[Value],
+        metric: Complexity,
+        coverage: Option<f64>,
+        thresholds: &[f64],
+    ) -> Result<(Metrics, (f64, f64))>;
+}
+pub(crate) struct Tree;
+
+impl Visit for Tree {
+    fn get_metrics_from_space(
+        space: &FuncSpace,
+        covs: &[Value],
+        metric: Complexity,
+        coverage: Option<f64>,
+        thresholds: &[f64],
+    ) -> Result<(Metrics, (f64, f64))> {
+        let covdir = coverage.is_some();
+        let (sifis_plain, sp_sum) = sifis_plain_function(space, covs, metric, covdir)?;
+        let (sifis_quantized, sq_sum) = sifis_quantized_function(space, covs, metric, covdir)?;
+        let crap = crap_function(space, covs, metric, coverage)?;
+        let skunk = skunk_nosmells_function(space, covs, metric, coverage)?;
+        let is_complex = check_complexity(sifis_plain, sifis_quantized, crap, skunk, thresholds);
+        let coverage = if let Some(coverage) = coverage {
+            coverage
+        } else {
+            let (covl, tl) = get_covered_lines(covs, space.start_line, space.end_line)?;
+            if tl == 0.0 {
+                0.0
+            } else {
+                (covl / tl) * 100.0
+            }
+        };
+        let m = Metrics::new(
+            sifis_plain,
+            sifis_quantized,
+            crap,
+            skunk,
+            is_complex,
+            f64::round(coverage * 100.0) / 100.0,
+        );
+        Ok((m, (sp_sum, sq_sum)))
+    }
+}
+
+#[inline(always)]
+#[allow(dead_code)]
+pub(crate) fn compare_float(a: f64, b: f64) -> bool {
+    a.total_cmp(&b) == Ordering::Equal
 }
 
 // Check all possible valid extensions
@@ -150,16 +206,13 @@ pub(crate) fn read_json_covdir(file: String, map_prefix: &str) -> Result<HashMap
         "".to_string(),
     )];
     let covdir = Covdir {
-        name: val["name"]
-            .as_str()
-            .ok_or(Error::ConversionError())?
-            .to_string(),
+        name: val["name"].as_str().ok_or(Error::ConversionError())?.into(),
         arr: vec![],
         coverage: val["coveragePercent"]
             .as_f64()
             .ok_or(Error::ConversionError())?,
     };
-    res.insert("PROJECT_ROOT".to_string(), covdir);
+    res.insert("PROJECT_ROOT".into(), covdir);
     while let Some((val, prefix)) = stack.pop() {
         val.iter().try_for_each(|(key, value)| -> Result<()> {
             if value["children"].is_object() {
@@ -183,7 +236,7 @@ pub(crate) fn read_json_covdir(file: String, map_prefix: &str) -> Result<HashMap
             let name = value["name"]
                 .as_str()
                 .ok_or(Error::ConversionError())?
-                .to_string();
+                .into();
             let path = Path::new(&name);
             let ext = path.extension();
 
@@ -239,7 +292,7 @@ pub(crate) fn get_covered_lines(covs: &[Value], start: usize, end: usize) -> Res
             .try_fold((0., 0.), |acc, (i, line)| -> Result<(f64, f64)> {
                 let is_null = line.is_null();
                 let sum;
-                if !is_null && i >= start - 1 && i < end {
+                if !is_null && (start - 1..end).contains(&i) {
                     let cov = line.as_u64().ok_or(Error::ConversionError())?;
                     if cov > 0 {
                         sum = (acc.0 + 1., acc.1 + 1.);
@@ -255,21 +308,21 @@ pub(crate) fn get_covered_lines(covs: &[Value], start: usize, end: usize) -> Res
 }
 
 // Get the root FuncSpace from a file
-pub(crate) fn get_root(path: &Path) -> Result<FuncSpace> {
-    let data = read_file(path)?;
-    let lang = guess_language(&data, path)
+pub(crate) fn get_root<A: AsRef<Path>>(path: A) -> Result<FuncSpace> {
+    let data = read_file(path.as_ref())?;
+    let lang = guess_language(&data, path.as_ref())
         .0
         .ok_or(Error::LanguageError())?;
-    debug!("{:?} is written in {:?}", path, lang);
-    let root = get_function_spaces(&lang, data, path, None).ok_or(Error::MetricsError())?;
+    debug!("{:?} is written in {:?}", path.as_ref(), lang);
+    let root = get_function_spaces(&lang, data, path.as_ref(), None).ok_or(Error::MetricsError())?;
     Ok(root)
 }
 
 // Get all spaces stating from root.
 // It does not contain the root
 pub(crate) fn get_spaces(root: &FuncSpace) -> Result<Vec<(&FuncSpace, String)>> {
-    let mut stack = vec![(root, "".to_string())];
-    let mut result = Vec::<(&FuncSpace, String)>::new();
+    let mut stack = vec![(root, String::new())];
+    let mut result = Vec::new();
     while let Some((space, path)) = stack.pop() {
         for s in &space.spaces {
             let p = format!(
@@ -306,7 +359,7 @@ pub(crate) fn check_complexity(
 
 // GET average, maximum and minimum given all the metrics
 pub(crate) fn get_cumulative_values(metrics: &Vec<Metrics>) -> (Metrics, Metrics, Metrics) {
-    let mut min = Metrics::new(f64::MAX, f64::MAX, f64::MAX, f64::MAX, false, 100.0);
+    let mut min = Metrics::min();
     let mut max = Metrics::default();
     let (sifis, sifisq, crap, skunk, cov) =
         metrics.iter().fold((0.0, 0.0, 0.0, 0.0, 0.0), |acc, m| {
