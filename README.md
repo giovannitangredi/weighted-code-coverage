@@ -3,14 +3,34 @@
 This repository contains the implementations of some Weighted Code Coverage algorithms
 for some of the languages supported by rust-code-analysis.
 
-The implemented algorithms are:
-- Sifis-Home mechanism by Luca Ardito and others (https://www.sifis-home.eu/wp-content/uploads/2021/10/D2.2_SIFIS-Home_v1.0-to-submit.pdf (section 2.4.1))
-- CRAP by Alberto Savoia and Bob Evans(https://testing.googleblog.com/2011/02/this-code-is-crap.html#:~:text=CRAP%20is%20short%20for%20Change,partner%20in%20crime%20Bob%20Evans. )
-- SkunkScore by Ernesto Tagwerker (https://www.fastruby.io/blog/code-quality/intruducing-skunk-stink-score-calculator.html )
-
 This repository uses [rust code analysis](https://github.com/mozilla/rust-code-analysis/)
 to analyze a project folder and [grcov](https://github.com/mozilla/grcov)
 to produce the coverage data used as `weighted-code-coverage` input.
+
+## Algorithms
+
+The implemented algorithms are:
+- WCC by Luca Ardito and others (https://www.sifis-home.eu/wp-content/uploads/2021/10/D2.2_SIFIS-Home_v1.0-to-submit.pdf (section 2.4.1))
+- CRAP by Alberto Savoia and Bob Evans(https://testing.googleblog.com/2011/02/this-code-is-crap.html#:~:text=CRAP%20is%20short%20for%20Change,partner%20in%20crime%20Bob%20Evans. )
+- SkunkScore by Ernesto Tagwerker (https://www.fastruby.io/blog/code-quality/intruducing-skunk-stink-score-calculator.html )
+
+### WCC
+Two version available for this algorithm:
+- WCC PLAIN
+- WCC QUANTIZED
+
+WCC PLAIN give each line of the code a complexity value of the file/function , then we sum all the covered lines and divide the result by the PLOC of the file/function.
+
+WCC QUANTIZED we analyze each line of the file if the line is not covered then we dive a weight of 0 , else if the complexity of the block(usually function) the line is part of is greater than 15 we assign a weight of 2 otherwise 1. We sum all the weight and then divide the result by the PLOC of the file
+
+### CRAP
+Take the total complexity of the file and the coverage in percentage then apply the following formula formula: 
+```(comp^2)*(1-coverage) +comp```
+The higher the result the more complex is the file.
+### SKUNK
+Take the total complexity of the file , the coverage in percentage, and a COMPLEXITY_FACTOR in this case equal to 25 then apply the following formula formula: 
+```(comp/COMPLEXITY_FACTOR)*(100-coverage*100)```
+The higher the result the more complex is the file.
 
 ## Usage
 
@@ -28,10 +48,12 @@ OPTIONS:
     -h, --help                         Print help information
     -j, --path_json <PATH_JSON>        Path to the grcov json in coveralls/covdir format
         --json <JSON_OUTPUT>           Path where to save the output of the json file
+    -m, --mode <MODE>                  Choose mode to use for analysis [default: files] [possible
+                                       values: files, functions]
     -n, --n_threads <N_THREADS>        Number of threads to use for concurrency [default: 2]
     -p, --path_file <PATH_FILE>        Path to the project folder
-    -t, --thresholds <THRESHOLDS>      Set four  thresholds in this order: SIFIS PLAIN, SIFIS
-                                       QUANTIZED, CRAP, SKUNK
+    -t, --thresholds <THRESHOLDS>      Set four  thresholds in this order: -t SIFIS_PLAIN,
+                                       SIFIS_QUANTIZED, CRAP, SKUNK
                                        
                                            All the values must be floats
                                        
@@ -52,7 +74,7 @@ OPTIONS:
 Example:
 
 ```
-weighted-code-coverage  --path_file /path/to/source/code --path_json /path/to/coveralls.json -c cyclomatic --json /path/to/output.json -f coveralls -t 35.0,1.5,35.0,30.0
+weighted-code-coverage  --path_file /path/to/source/code --path_json /path/to/coveralls.json -c cyclomatic --json /path/to/output.json -f coveralls -m files -t 35.0,1.5,35.0,30.0
 ```
 
 ## Steps to install and run weighted-code-coverage
