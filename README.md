@@ -35,46 +35,75 @@ The higher the result the more complex is the file.
 ## Usage
 
 Run `weighted-code-coverage` on a project with the following command:
-
-USAGE:
-    weighted-code-coverage [OPTIONS] --path_file <PATH_FILE> --path_json <PATH_JSON>
-
-OPTIONS:
-    -c, --complexity <COMPLEXITY>      Choose complexity metric to use [default: cyclomatic]
-                                       [possible values: cyclomatic, cognitive]
-        --csv <PATH_CSV>               Path where to save the output of the csv file
-    -f, --json-format <JSON_FORMAT>    Specify the type of format used between coveralls and covdir
-                                       [default: coveralls] [possible values: covdir, coveralls]
-    -h, --help                         Print help information
-    -j, --path_json <PATH_JSON>        Path to the grcov json in coveralls/covdir format
-        --json <JSON_OUTPUT>           Path where to save the output of the json file
-    -m, --mode <MODE>                  Choose mode to use for analysis [default: files] [possible
-                                       values: files, functions]
-    -n, --n_threads <N_THREADS>        Number of threads to use for concurrency [default: 2]
-    -p, --path_file <PATH_FILE>        Path to the project folder
-    -t, --thresholds <THRESHOLDS>      Set four  thresholds in this order: -t SIFIS_PLAIN,
-                                       SIFIS_QUANTIZED, CRAP, SKUNK
-                                       
-                                           All the values must be floats
-                                       
-                                           All Thresholds has 0 as minimum value, thus no threshold
-                                       at all.
-                                       
-                                           SIFIS PLAIN has a max threshold of COMP*SLOC/PLOC
-                                       
-                                           SIFIS QUANTIZED has a max threshold of 2*SLOC/PLOC
-                                       
-                                           CRAP has a max threshold of COMP^2 +COMP
-                                       
-                                           SKUNK has a max threshold of COMP/25
-                                       [default: 35.0,1.5,35.0,30.0]
-    -v, --verbose                      Output the generated paths as they are produced
-    -V, --version                      Print version information
-
-Example:
+```
+weighted-code-coverage [OPTIONS] --path_file <PATH_FILE> --path_json <PATH_JSON>
+```
+Example with some options:
 
 ```
 weighted-code-coverage  --path_file /path/to/source/code --path_json /path/to/coveralls.json -c cyclomatic --json /path/to/output.json -f coveralls -m files -t 35.0,1.5,35.0,30.0
+```
+
+### Complexity
+To choose complexity metric to use.
+use the *complexity* `c` option.
+
+It supports only these values: *cyclomatic*, *cognitive*.
+If not specified the default value is *cyclomatic*.
+
+Example:
+```
+weighted-code-coverage --path_file <PATH_FILE> --path_json <PATH_JSON> -c cognitive
+```
+
+### JSON Format
+To specify the json format used for the json file.
+use the *json-format* `f` option.
+
+It supports only these values: *coveralls*, *covdir*.
+If not specified the default value is *coveralls*.
+
+Example:
+```
+weighted-code-coverage --path_file <PATH_FILE> --path_json <PATH_JSON> -f coveralls
+```
+
+### Mode
+To choose the mode to use for analysis.
+use the *mode* `m` option.
+
+It supports only these values: *files*, *functions*.
+If not specified the default value is *files*.
+
+Example:
+```
+weighted-code-coverage --path_file <PATH_FILE> --path_json <PATH_JSON> -m functions
+```
+
+### Thresholds
+To set four thresholds for evaluation during the analysis.
+use the *thresholds* `t` option. 
+
+A string must be given with all the 4 algorithms separated by comma *,* in this specific order:
+*WCC PLAIN*,*WCC QUANTIZED*,*CRAP*,*SKUNK*
+
+If not specified the default value are 35.0,1.5,35.0,30.0.
+
+Example:
+```
+weighted-code-coverage --path_file <PATH_FILE> --path_json <PATH_JSON> -t 50.0,0.7,65.0,45.0
+```
+
+### Threads
+To choose the number of thread to launch for the application.
+Use the *n_threads* `n` option. 
+
+If not specified the default value is 2.
+Can launch at minimum 2 threads.
+
+Example:
+```
+weighted-code-coverage --path_file <PATH_FILE> --path_json <PATH_JSON> -n 16
 ```
 
 ## Steps to install and run weighted-code-coverage
