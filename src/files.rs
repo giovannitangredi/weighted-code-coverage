@@ -56,6 +56,31 @@ impl Metrics {
             coverage: 100.0,
         }
     }
+
+    pub fn sifis_plain(mut self, sifis_plain: f64) -> Self {
+        self.sifis_plain = sifis_plain;
+        self
+    }
+    pub fn sifis_quantized(mut self, sifis_quantized: f64) -> Self {
+        self.sifis_quantized = sifis_quantized;
+        self
+    }
+    pub fn crap(mut self, crap: f64) -> Self {
+        self.crap = crap;
+        self
+    }
+    pub fn skunk(mut self, skunk: f64) -> Self {
+        self.skunk = skunk;
+        self
+    }
+    pub fn is_complex(mut self, is_complex: bool) -> Self {
+        self.is_complex = is_complex;
+        self
+    }
+    pub fn coverage(mut self, coverage: f64) -> Self {
+        self.coverage = coverage;
+        self
+    }
 }
 
 /// Struct with all the metrics computed for a single file
@@ -106,7 +131,7 @@ type Output = (Vec<FileMetrics>, Vec<String>, Vec<FileMetrics>, f64);
 /// This Function get the folder of the repo to analyzed and the path to the json obtained using grcov
 /// if the a file is not found in the json that files will be skipped
 /// It returns the  tuple (res, files_ignored, complex_files, project_coverage)
-pub fn get_metrics<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
+pub fn get_metrics<A: AsRef<Path>, B: AsRef<Path>>(
     files_path: A,
     json_path: B,
     metric: Complexity,
@@ -372,7 +397,7 @@ fn chunk_vector(vec: Vec<String>, n_threads: usize) -> Vec<Vec<String>> {
 /// It also takes as arguments the complexity metrics that must be used between cognitive or cyclomatic
 /// If the a file is not found in the json that files will be skipped
 /// It returns the  tuple (res, files_ignored, complex_files, project_coverage)
-pub fn get_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
+pub fn get_metrics_concurrent<A: AsRef<Path>, B: AsRef<Path>>(
     files_path: A,
     json_path: B,
     metric: Complexity,
@@ -593,7 +618,7 @@ fn consumer_covdir(
 /// It also takes as arguments the complexity metrics that must be used between cognitive or cyclomatic
 /// If the a file is not found in the json that files will be skipped
 /// It returns the  tuple (res, files_ignored, complex_files, project_coverage)
-pub fn get_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
+pub fn get_metrics_concurrent_covdir<A: AsRef<Path>, B: AsRef<Path>>(
     files_path: A,
     json_path: B,
     metric: Complexity,

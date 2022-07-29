@@ -286,7 +286,7 @@ fn chunk_vector(vec: Vec<String>, n_threads: usize) -> Vec<Vec<String>> {
 /// It also takes as arguments the complexity metrics that must be used between cognitive or cyclomatic
 /// If the a file is not found in the json that files will be skipped
 /// It returns the  tuple (res, files_ignored, complex_files, project_coverage)
-pub fn get_functions_metrics_concurrent<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
+pub fn get_functions_metrics_concurrent<A: AsRef<Path>, B: AsRef<Path>>(
     files_path: A,
     json_path: B,
     metric: Complexity,
@@ -537,7 +537,7 @@ fn consumer_covdir(
     Ok(())
 }
 
-pub fn get_functions_metrics_concurrent_covdir<A: AsRef<Path> + Copy, B: AsRef<Path> + Copy>(
+pub fn get_functions_metrics_concurrent_covdir<A: AsRef<Path>, B: AsRef<Path>>(
     files_path: A,
     json_path: B,
     metric: Complexity,

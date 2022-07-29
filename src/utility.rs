@@ -332,7 +332,7 @@ pub(crate) fn get_spaces(root: &FuncSpace) -> Result<Vec<(&FuncSpace, String)>> 
                 s.start_line,
                 s.end_line
             );
-            stack.push((s, p.clone()));
+            stack.push((s, p.to_string()));
             if s.kind == SpaceKind::Function {
                 result.push((s, p));
             }
@@ -397,15 +397,14 @@ pub(crate) fn get_project_metrics(
     } else {
         0.0
     };
-    let m = Metrics {
-        sifis_plain: values.sifis_plain_sum / values.ploc_sum,
-        sifis_quantized: values.sifis_quantized_sum / values.ploc_sum,
-        crap: ((values.comp_sum.powf(2.)) * ((1.0 - project_coverage / 100.).powf(3.)))
-            + values.comp_sum,
-        skunk: (values.comp_sum / COMPLEXITY_FACTOR) * (100. - (project_coverage)),
-        is_complex: false,
-        coverage: project_coverage,
-    };
+    let mut m = Metrics::default();
+    m = m.sifis_plain(values.sifis_plain_sum / values.ploc_sum);
+    m = m.sifis_quantized(values.sifis_quantized_sum / values.ploc_sum);
+    m = m.crap(
+        ((values.comp_sum.powf(2.)) * ((1.0 - project_coverage / 100.).powf(3.))) + values.comp_sum,
+    );
+    m = m.skunk((values.comp_sum / COMPLEXITY_FACTOR) * (100. - (project_coverage)));
+    m = m.coverage(project_coverage);
     Ok(m)
 }
 
